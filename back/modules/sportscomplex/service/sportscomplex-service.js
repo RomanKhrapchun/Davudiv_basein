@@ -484,13 +484,14 @@ class SportsComplexService {
 
     async createClient(request) {
         try {
-            const { name, membership_number, phone_number, subscription_duration } = request.body;
+            const { name, membership_number, phone_number, subscription_duration, service_name } = request.body;
             
             const result = await sportsComplexRepository.createClient({
                 name,
                 membership_number,
                 phone_number,
-                subscription_duration
+                subscription_duration,
+                service_name: service_name || 'Загальний доступ'
             });
             
             await logRepository.createLog({
@@ -521,18 +522,15 @@ class SportsComplexService {
     async updateClient(request) {
         try {
             const { id } = request.params;
-            const { name, membership_number, phone_number, subscription_duration } = request.body;
+            const { name, membership_number, phone_number, subscription_duration, service_name } = request.body;
             
             const result = await sportsComplexRepository.updateClient(id, {
                 name,
                 membership_number,
                 phone_number,
-                subscription_duration
+                subscription_duration,
+                service_name
             });
-            
-            if (!result) {
-                throw new Error('Клієнта не знайдено');
-            }
             
             await logRepository.createLog({
                 row_pk_id: id,
@@ -548,49 +546,54 @@ class SportsComplexService {
                 oid: '16507',
             });
             
-            return { success: true, message: 'Клієнта успішно оновлено' };
+            return { 
+                success: true, 
+                message: 'Клієнта успішно оновлено',
+                id: result.id
+            };
         } catch (error) {
             logger.error("[SportsComplexService][updateClient]", error);
             throw error;
         }
     }
 
-    async getClientById(id) {
-        try {
-            return await sportsComplexRepository.getClientById(id);
-        } catch (error) {
-            logger.error("[SportsComplexService][getClientById]", error);
-            throw error;
-        }
-    }
-
-    async deleteClient(request) {
+    async renewSubscription(request) {
         try {
             const { id } = request.params;
             
-            const result = await sportsComplexRepository.deleteClient(id);
-            
-            if (!result) {
-                throw new Error('Клієнта не знайдено');
+            const client = await sportsComplexRepository.getClientById(id);
+            if (!client) {
+                const error = new Error('Клієнта не знайдено');
+                error.statusCode = 404;
+                throw error;
             }
             
-            await logRepository.createLog({
-                row_pk_id: id,
-                uid: request?.user?.id,
-                action: 'DELETE',
-                client_addr: request?.ip,
-                application_name: 'Видалення клієнта',
-                action_stamp_tx: new Date(),
-                action_stamp_stm: new Date(),
-                action_stamp_clk: new Date(),
-                schema_name: 'sport',
-                table_name: 'clients',
-                oid: '16507',
-            });
+            const success = await sportsComplexRepository.renewClientSubscription(id);
             
-            return { success: true, message: 'Клієнта успішно видалено' };
+            if (success) {
+                await logRepository.createLog({
+                    row_pk_id: id,
+                    uid: request?.user?.id,
+                    action: 'UPDATE',
+                    client_addr: request?.ip,
+                    application_name: 'Оновлення абонемента',
+                    action_stamp_tx: new Date(),
+                    action_stamp_stm: new Date(),
+                    action_stamp_clk: new Date(),
+                    schema_name: 'sport',
+                    table_name: 'clients',
+                    oid: '16507',
+                });
+                
+                return { 
+                    success: true, 
+                    message: 'Абонемент успішно оновлено на 30 днів' 
+                };
+            } else {
+                throw new Error('Помилка при оновленні абонемента');
+            }
         } catch (error) {
-            logger.error("[SportsComplexService][deleteClient]", error);
+            logger.error("[SportsComplexService][renewSubscription]", error);
             throw error;
         }
     }

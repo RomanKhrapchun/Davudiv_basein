@@ -12,7 +12,8 @@ const {
     updateBillSchema,
     createClientSchema, 
     createBillSchema,
-    searchClientsSchema
+    searchClientsSchema,
+    renewSubscriptionSchema
 } = require("../schema/sportscomplex-schema");
 
 async function sportsComplexRoutes(fastify, options) {
@@ -114,6 +115,11 @@ async function sportsComplexRoutes(fastify, options) {
     });
 
     fastify.delete("/clients/:id", sportsComplexController.deleteClient);
+
+    fastify.put("/clients/:id/renew-subscription", {
+        schema: renewSubscriptionSchema,
+        handler: sportsComplexController.renewSubscription
+    });
 }
 
 module.exports = sportsComplexRoutes;

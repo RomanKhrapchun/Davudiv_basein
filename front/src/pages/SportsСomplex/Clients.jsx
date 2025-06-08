@@ -23,6 +23,7 @@ const filterIcon = generateIcon(iconMap.filter);
 const searchIcon = generateIcon(iconMap.search, 'input-icon');
 const dropDownIcon = generateIcon(iconMap.arrowDown);
 const addIcon = generateIcon(iconMap.add);
+const eyeIcon = generateIcon(iconMap.eye); // Додаємо іконку ока для оновлення абонемента
 const dropDownStyle = { width: '100%' };
 const childDropDownStyle = { justifyContent: 'center' };
 
@@ -32,6 +33,7 @@ const Clients = () => {
     const { store } = useContext(Context);
     const addFormRef = useRef(null);
     const editFormRef = useRef(null);
+    const confirmFormRef = useRef(null);
     const isFirstRun = useRef(true);
     
     const [state, setState] = useState({
@@ -51,11 +53,12 @@ const Clients = () => {
             name: '',
             membership_number: '',
             phone_number: '',
-            subscription_duration: ''
+            subscription_duration: '',
+            service_name: ''
         }
     });
-
-    // Стан для модального вікна редагування
+    
+    // Стан для модального вікна редагування клієнта
     const [editModalState, setEditModalState] = useState({
         isOpen: false,
         loading: false,
@@ -64,70 +67,78 @@ const Clients = () => {
             name: '',
             membership_number: '',
             phone_number: '',
-            subscription_duration: ''
+            subscription_duration: '',
+            service_name: ''
         }
     });
 
-    // Завантаження даних клієнтів
-    const {error, status, data, retryFetch} = useFetch('api/sportscomplex/clients/filter', {
-        method: 'post',
-        data: state.sendData
+    // Стан для модального вікна підтвердження оновлення абонемента
+    const [confirmModalState, setConfirmModalState] = useState({
+        isOpen: false,
+        loading: false,
+        clientId: null,
+        clientName: ''
     });
 
-    // Ефект для оновлення даних при зміні параметрів пошуку
-    useEffect(() => {
-        if (isFirstRun.current) {
-            isFirstRun.current = false
-            return;
-        }
-        retryFetch('api/sportscomplex/clients/filter', {
-            method: 'post',
-            data: state.sendData,
-        })
-    }, [state.sendData, retryFetch]);
+    const { data, status, refetch } = useFetch(
+        'api/sportscomplex/clients/filter',
+        'post',
+        state.sendData,
+        true
+    );
 
-    const startRecord = ((state.sendData.page || 1) - 1) * state.sendData.limit + 1;
-    const endRecord = Math.min(startRecord + state.sendData.limit - 1, parseInt(data?.totalItems) || 1);
-
-    // Визначення колонок таблиці
-    const columnTable = useMemo(() => [
-        {
-            title: 'ПІБ',
-            dataIndex: 'name',
-            width: '25%'
+    // Оновлені колонки таблиці з новими полями
+    const columns = useMemo(() => [
+        { title: 'ПІБ клієнта', dataIndex: 'name', key: 'name' },
+        { title: 'Номер абонемента', dataIndex: 'membership_number', key: 'membership_number' },
+        { title: 'Номер телефону', dataIndex: 'phone_number', key: 'phone_number' },
+        { 
+            title: 'Послуга', 
+            dataIndex: 'service_name', 
+            key: 'service_name',
+            render: (value) => value || 'Загальний доступ'
+        },
+        { 
+            title: 'Кількість відвідувань', 
+            dataIndex: 'visit_count', 
+            key: 'visit_count',
+            render: (value) => value || 0
         },
         {
-            title: 'Номер абонемента',
-            dataIndex: 'membership_number',
-            width: '20%'
+            title: 'Статус абонемента',
+            key: 'subscription_status',
+            render: (_, record) => {
+                if (!record.subscription_active || record.subscription_days_left <= 0) {
+                    return <span style={{ color: 'red' }}>Абонемент не активний, прошу оновіть його</span>;
+                }
+                return <span style={{ color: 'green' }}>{record.subscription_days_left} днів залишилось</span>;
+            }
         },
         {
-            title: 'Номер телефону',
-            dataIndex: 'phone_number',
-            width: '20%'
-        },
-        {
-            title: 'Час абонемента',
-            dataIndex: 'subscription_duration',
-            width: '20%'
-        },
-        {
-            title: 'Дія',
-            dataIndex: 'action',
-            width: '15%',
+            title: 'Дії',
+            key: 'actions',
             render: (_, record) => (
-                <div className="btn-sticky" style={{ justifyContent: 'center' }}>
-                    <Button
-                        title="Редагувати"
-                        icon={editIcon}
+                <div className="btn-group btn-group--sm">
+                    <Button 
+                        className="btn--icon" 
                         onClick={() => handleOpenEditModal(record)}
-                    />
+                        title="Редагувати"
+                    >
+                        {editIcon}
+                    </Button>
+                    <Button 
+                        className="btn--icon" 
+                        onClick={() => handleOpenRenewModal(record)}
+                        title="Оновити абонемент"
+                    >
+                        {eyeIcon}
+                    </Button>
                 </div>
             )
         }
-    ], []);
+    ], [editIcon, eyeIcon]);
 
-    // Підготовка даних для таблиці
+    // Обробка даних таблиці з новими полями
     const tableData = useMemo(() => {
         if (!Array.isArray(data?.items)) return [];
         return data.items.map(el => ({
@@ -136,7 +147,11 @@ const Clients = () => {
             name: el.name,
             membership_number: el.membership_number,
             phone_number: el.phone_number,
-            subscription_duration: el.subscription_duration
+            service_name: el.service_name,
+            visit_count: el.visit_count,
+            subscription_duration: el.subscription_duration,
+            subscription_days_left: el.subscription_days_left,
+            subscription_active: el.subscription_active
         }));
     }, [data]);
 
@@ -212,7 +227,6 @@ const Clients = () => {
 
     // Функції для модального вікна створення
     const openCreateModal = () => {
-        // Генеруємо номер абонемента - 6 випадкових цифр
         const membershipNumber = Math.floor(100000 + Math.random() * 900000).toString();
         
         setCreateModalState(prev => ({
@@ -222,7 +236,8 @@ const Clients = () => {
                 name: '',
                 membership_number: membershipNumber,
                 phone_number: '',
-                subscription_duration: ''
+                subscription_duration: '',
+                service_name: ''
             }
         }));
         document.body.style.overflow = 'hidden';
@@ -243,7 +258,8 @@ const Clients = () => {
                 name: client.name,
                 membership_number: client.membership_number,
                 phone_number: client.phone_number,
-                subscription_duration: client.subscription_duration
+                subscription_duration: client.subscription_duration,
+                service_name: client.service_name || ''
             }
         }));
         document.body.style.overflow = 'hidden';
@@ -254,183 +270,198 @@ const Clients = () => {
         document.body.style.overflow = 'auto';
     };
 
+    // Функції для модального вікна підтвердження оновлення абонемента
+    const handleOpenRenewModal = (client) => {
+        setConfirmModalState(prev => ({
+            ...prev,
+            isOpen: true,
+            clientId: client.id,
+            clientName: client.name
+        }));
+        document.body.style.overflow = 'hidden';
+    };
+
+    const closeRenewModal = () => {
+        setConfirmModalState(prev => ({ ...prev, isOpen: false, clientId: null, clientName: '' }));
+        document.body.style.overflow = 'auto';
+    };
+
     // Функція для створення клієнта
     const handleCreateFormSubmit = async () => {
-        const { name, membership_number, phone_number, subscription_duration } = createModalState.formData;
+        const { name, membership_number, phone_number, subscription_duration, service_name } = createModalState.formData;
         
         if (!name || !membership_number || !phone_number || !subscription_duration) {
             notification({
                 type: 'warning',
-                placement: 'top',
-                title: 'Помилка',
-                message: 'Всі поля форми обов\'язкові для заповнення',
+                title: 'Попередження',
+                message: 'Будь ласка, заповніть всі обов\'язкові поля',
+                placement: 'top'
             });
             return;
         }
-        
+
+        setCreateModalState(prev => ({ ...prev, loading: true }));
+
         try {
-            setCreateModalState(prev => ({...prev, loading: true}));
-            
-            await fetchFunction('/api/sportscomplex/clients', {
+            const response = await fetchFunction('api/sportscomplex/clients', {
                 method: 'post',
                 data: {
                     name,
                     membership_number,
                     phone_number,
-                    subscription_duration
+                    subscription_duration,
+                    service_name: service_name || 'Загальний доступ'
                 }
             });
-            
-            notification({
-                type: 'success',
-                placement: 'top',
-                title: 'Успіх',
-                message: 'Клієнта успішно створено',
-            });
-            
-            retryFetch('/api/sportscomplex/clients/filter', {
-                method: 'post',
-                data: state.sendData,
-            });
-            
-            closeCreateModal();
-        } catch (error) {
-            if (error?.response?.status === 401) {
+
+            if (response.success) {
                 notification({
-                    type: 'warning',
-                    title: "Помилка",
-                    message: "Не авторизований",
-                    placement: 'top',
+                    type: 'success',
+                    title: 'Успіх',
+                    message: response.message,
+                    placement: 'top'
                 });
-                store.logOff();
-                return navigate('/');
+                closeCreateModal();
+                refetch();
             }
-            
+        } catch (error) {
             notification({
-                type: 'warning',
-                title: "Помилка",
-                message: error?.response?.data?.message || error?.response?.data?.error || error.message,
-                placement: 'top',
+                type: 'error',
+                title: 'Помилка',
+                message: error.message || 'Помилка при створенні клієнта',
+                placement: 'top'
             });
         } finally {
-            setCreateModalState(prev => ({...prev, loading: false}));
+            setCreateModalState(prev => ({ ...prev, loading: false }));
         }
     };
 
     // Функція для редагування клієнта
     const handleEditFormSubmit = async () => {
-        const { name, membership_number, phone_number, subscription_duration } = editModalState.formData;
+        const { name, membership_number, phone_number, subscription_duration, service_name } = editModalState.formData;
         
         if (!name || !membership_number || !phone_number || !subscription_duration) {
             notification({
                 type: 'warning',
-                placement: 'top',
-                title: 'Помилка',
-                message: 'Всі поля форми обов\'язкові для заповнення',
+                title: 'Попередження',
+                message: 'Будь ласка, заповніть всі обов\'язкові поля',
+                placement: 'top'
             });
             return;
         }
-        
+
+        setEditModalState(prev => ({ ...prev, loading: true }));
+
         try {
-            setEditModalState(prev => ({...prev, loading: true}));
-            
-            await fetchFunction(`/api/sportscomplex/clients/${editModalState.clientId}`, {
+            const response = await fetchFunction(`api/sportscomplex/clients/${editModalState.clientId}`, {
                 method: 'put',
                 data: {
                     name,
                     membership_number,
                     phone_number,
-                    subscription_duration
+                    subscription_duration,
+                    service_name
                 }
             });
-            
-            notification({
-                type: 'success',
-                placement: 'top',
-                title: 'Успіх',
-                message: 'Клієнта успішно оновлено',
-            });
-            
-            retryFetch('/api/sportscomplex/clients/filter', {
-                method: 'post',
-                data: state.sendData,
-            });
-            
-            closeEditModal();
-        } catch (error) {
-            if (error?.response?.status === 401) {
+
+            if (response.success) {
                 notification({
-                    type: 'warning',
-                    title: "Помилка",
-                    message: "Не авторизований",
-                    placement: 'top',
+                    type: 'success',
+                    title: 'Успіх',
+                    message: response.message,
+                    placement: 'top'
                 });
-                store.logOff();
-                return navigate('/');
+                closeEditModal();
+                refetch();
             }
-            
+        } catch (error) {
             notification({
-                type: 'warning',
-                title: "Помилка",
-                message: error?.response?.data?.message || error?.response?.data?.error || error.message,
-                placement: 'top',
+                type: 'error',
+                title: 'Помилка',
+                message: error.message || 'Помилка при оновленні клієнта',
+                placement: 'top'
             });
         } finally {
-            setEditModalState(prev => ({...prev, loading: false}));
+            setEditModalState(prev => ({ ...prev, loading: false }));
         }
     };
 
-    // Обробка помилок
+    // Функція для оновлення абонемента
+    const handleRenewSubscription = async () => {
+        setConfirmModalState(prev => ({ ...prev, loading: true }));
+
+        try {
+            const response = await fetchFunction(`api/sportscomplex/clients/${confirmModalState.clientId}/renew-subscription`, {
+                method: 'put'
+            });
+
+            if (response.success) {
+                notification({
+                    type: 'success',
+                    title: 'Успіх',
+                    message: response.message,
+                    placement: 'top'
+                });
+                closeRenewModal();
+                refetch();
+            }
+        } catch (error) {
+            notification({
+                type: 'error',
+                title: 'Помилка',
+                message: error.message || 'Помилка при оновленні абонемента',
+                placement: 'top'
+            });
+        } finally {
+            setConfirmModalState(prev => ({ ...prev, loading: false }));
+        }
+    };
+
+    useEffect(() => {
+        if (data && status === STATUS.SUCCESS && !isFirstRun.current) {
+            refetch();
+        }
+        isFirstRun.current = false;
+    }, [state.sendData, refetch]);
+
     if (status === STATUS.ERROR) {
-        return <PageError title={error.message} statusError={error.status} />;
+        return <PageError title="Схоже, виникла проблема із завантаженням даних." statusError="500" />;
     }
 
     return (
         <>
-            {status === STATUS.PENDING && <SkeletonPage />}
-            
-            {status === STATUS.SUCCESS && (
-                <div className="table-elements">
-                    <div className="table-header">
-                        <h2 className="title title--sm">
-                            {data?.items?.length ? 
-                                `Показує ${startRecord}-${endRecord} з ${data?.totalItems}` : 
-                                'Записів не знайдено'
-                            }
-                        </h2>
-                        <div className="table-header__buttons">
+            {status === STATUS.PENDING && isFirstRun.current ? (
+                <SkeletonPage />
+            ) : (
+                <div className={classNames("page", { "page--overlay": state.isOpen })}>
+                    <div className="page__header">
+                        <h2 className="title title--md">Клієнти</h2>
+                        <div className="btn-group">
+                            <Button onClick={openCreateModal}>
+                                {addIcon}
+                                Додати клієнта
+                            </Button>
                             <Button 
-                                className="btn--primary"
-                                onClick={openCreateModal}
-                                icon={addIcon}
+                                className={`btn--filter ${state.isOpen ? "btn--filter-active" : ""}`} 
+                                onClick={filterHandleClick}
                             >
-                                Додати
+                                {filterIcon}
                             </Button>
                             <Dropdown 
-                                icon={dropDownIcon} 
-                                iconPosition="right" 
+                                dropDownIcon={dropDownIcon} 
+                                textDropDown={state.sendData.limit} 
+                                itemMenu={itemMenu} 
                                 style={dropDownStyle} 
                                 childStyle={childDropDownStyle} 
-                                caption={`Записів: ${state.sendData.limit}`} 
-                                menu={itemMenu} 
                             />
-                            <Button 
-                                className="table-filter-trigger" 
-                                onClick={filterHandleClick} 
-                                icon={filterIcon}
-                            >
-                                Фільтри
-                            </Button>
                         </div>
                     </div>
-                    <div className="table-main">
-                        <div 
-                            style={{width: data?.items?.length > 0 ? 'auto' : '100%'}} 
-                            className={classNames("table-and-pagination-wrapper", {"table-and-pagination-wrapper--active": state.isOpen})}
-                        >
+                    <div className="page__content">
+                        <div className="table-data">
                             <Table 
-                                columns={Array.isArray(columnTable) ? columnTable.filter(Boolean) : []} 
-                                dataSource={Array.isArray(tableData) ? tableData : []}
+                                loading={status === STATUS.PENDING} 
+                                columns={columns} 
+                                dataSource={status === STATUS.SUCCESS ? tableData : []}
                             />
                             <Pagination 
                                 className="m-b" 
@@ -482,138 +513,182 @@ const Clients = () => {
             <Transition in={createModalState.isOpen} timeout={200} unmountOnExit nodeRef={addFormRef}>
                 {transitionState => (
                     <Modal
-                        className={transitionState === 'entered' ? "modal-window-wrapper--active" : ""}
+                        className={transitionState === 'entered' ? 'modal--active' : ''}
                         onClose={closeCreateModal}
-                        onOk={handleCreateFormSubmit}
-                        confirmLoading={createModalState.loading}
-                        cancelText="Скасувати"
-                        okText="Зберегти"
-                        title="Створення нового клієнта"
-                        width="600px"
+                        nodeRef={addFormRef}
                     >
-                        <div className="form-container">
-                            <FormItem 
-                                label="ПІБ клієнта" 
-                                required 
-                                fullWidth
-                            >
+                        <div className="modal__header">
+                            <h3 className="title title--md">Додати клієнта</h3>
+                        </div>
+                        <div className="modal__content">
+                            <FormItem label="ПІБ клієнта*">
                                 <Input
                                     name="name"
+                                    placeholder="Введіть ПІБ"
                                     value={createModalState.formData.name}
                                     onChange={onCreateFormChange}
-                                    placeholder="Введіть ПІБ клієнта"
                                 />
                             </FormItem>
-                            
-                            <FormItem 
-                                label="Номер абонемента" 
-                                required 
-                                fullWidth
-                                tooltip="Номер абонемента генерується автоматично"
-                            >
+                            <FormItem label="Номер абонемента*">
                                 <Input
                                     name="membership_number"
+                                    placeholder="Номер абонемента"
                                     value={createModalState.formData.membership_number}
                                     onChange={onCreateFormChange}
-                                    placeholder="Автоматично згенерований"
                                 />
                             </FormItem>
-                            
-                            <FormItem 
-                                label="Номер телефону" 
-                                required 
-                                fullWidth
-                            >
+                            <FormItem label="Номер телефону*">
                                 <Input
                                     name="phone_number"
+                                    placeholder="Введіть номер телефону"
                                     value={createModalState.formData.phone_number}
                                     onChange={onCreateFormChange}
-                                    placeholder="Введіть номер телефону"
                                 />
                             </FormItem>
-                            
-                            <FormItem 
-                                label="Час абонемента" 
-                                required 
-                                fullWidth
-                            >
+                            <FormItem label="Тривалість абонемента*">
                                 <Input
                                     name="subscription_duration"
+                                    placeholder="Введіть тривалість"
                                     value={createModalState.formData.subscription_duration}
                                     onChange={onCreateFormChange}
-                                    placeholder="Наприклад: 1 місяць, 3 місяці"
                                 />
                             </FormItem>
+                            <FormItem label="Послуга">
+                                <Input
+                                    name="service_name"
+                                    placeholder="Назва послуги (необов'язково)"
+                                    value={createModalState.formData.service_name}
+                                    onChange={onCreateFormChange}
+                                />
+                            </FormItem>
+                        </div>
+                        <div className="modal__footer">
+                            <div className="btn-group">
+                                <Button 
+                                    onClick={handleCreateFormSubmit}
+                                    loading={createModalState.loading}
+                                >
+                                    Зберегти
+                                </Button>
+                                <Button 
+                                    className="btn--secondary" 
+                                    onClick={closeCreateModal}
+                                >
+                                    Скасувати
+                                </Button>
+                            </div>
                         </div>
                     </Modal>
                 )}
             </Transition>
-            
+
             {/* Модальне вікно для редагування клієнта */}
             <Transition in={editModalState.isOpen} timeout={200} unmountOnExit nodeRef={editFormRef}>
                 {transitionState => (
                     <Modal
-                        className={transitionState === 'entered' ? "modal-window-wrapper--active" : ""}
+                        className={transitionState === 'entered' ? 'modal--active' : ''}
                         onClose={closeEditModal}
-                        onOk={handleEditFormSubmit}
-                        confirmLoading={editModalState.loading}
-                        cancelText="Скасувати"
-                        okText="Зберегти"
-                        title="Редагування клієнта"
-                        width="600px"
+                        nodeRef={editFormRef}
                     >
-                        <div className="form-container">
-                            <FormItem 
-                                label="ПІБ клієнта" 
-                                required 
-                                fullWidth
-                            >
+                        <div className="modal__header">
+                            <h3 className="title title--md">Редагувати клієнта</h3>
+                        </div>
+                        <div className="modal__content">
+                            <FormItem label="ПІБ клієнта*">
                                 <Input
                                     name="name"
+                                    placeholder="Введіть ПІБ"
                                     value={editModalState.formData.name}
                                     onChange={onEditFormChange}
-                                    placeholder="Введіть ПІБ клієнта"
                                 />
                             </FormItem>
-                            
-                            <FormItem 
-                                label="Номер абонемента" 
-                                required 
-                                fullWidth
-                            >
+                            <FormItem label="Номер абонемента*">
                                 <Input
                                     name="membership_number"
+                                    placeholder="Номер абонемента"
                                     value={editModalState.formData.membership_number}
                                     onChange={onEditFormChange}
-                                    placeholder="Введіть номер абонемента"
                                 />
                             </FormItem>
-                            
-                            <FormItem 
-                                label="Номер телефону" 
-                                required 
-                                fullWidth
-                            >
+                            <FormItem label="Номер телефону*">
                                 <Input
                                     name="phone_number"
+                                    placeholder="Введіть номер телефону"
                                     value={editModalState.formData.phone_number}
                                     onChange={onEditFormChange}
-                                    placeholder="Введіть номер телефону"
                                 />
                             </FormItem>
-                            
-                            <FormItem 
-                                label="Час абонемента" 
-                                required 
-                                fullWidth
-                            >
+                            <FormItem label="Тривалість абонемента*">
                                 <Input
                                     name="subscription_duration"
+                                    placeholder="Введіть тривалість"
                                     value={editModalState.formData.subscription_duration}
                                     onChange={onEditFormChange}
-                                    placeholder="Наприклад: 1 місяць, 3 місяці"
                                 />
                             </FormItem>
+                            <FormItem label="Послуга">
+                                <Input
+                                    name="service_name"
+                                    placeholder="Назва послуги"
+                                    value={editModalState.formData.service_name}
+                                    onChange={onEditFormChange}
+                                />
+                            </FormItem>
+                        </div>
+                        <div className="modal__footer">
+                            <div className="btn-group">
+                                <Button 
+                                    onClick={handleEditFormSubmit}
+                                    loading={editModalState.loading}
+                                >
+                                    Зберегти зміни
+                                </Button>
+                                <Button 
+                                    className="btn--secondary" 
+                                    onClick={closeEditModal}
+                                >
+                                    Скасувати
+                                </Button>
+                            </div>
+                        </div>
+                    </Modal>
+                )}
+            </Transition>
+
+            {/* Модальне вікно підтвердження оновлення абонемента */}
+            <Transition in={confirmModalState.isOpen} timeout={200} unmountOnExit nodeRef={confirmFormRef}>
+                {transitionState => (
+                    <Modal
+                        className={transitionState === 'entered' ? 'modal--active' : ''}
+                        onClose={closeRenewModal}
+                        nodeRef={confirmFormRef}
+                    >
+                        <div className="modal__header">
+                            <h3 className="title title--md">Підтвердження оновлення абонемента</h3>
+                        </div>
+                        <div className="modal__content">
+                            <p>
+                                Ви точно бажаєте оновити абонемент для клієнта <strong>{confirmModalState.clientName}</strong>?
+                            </p>
+                            <p>
+                                Після підтвердження абонемент буде оновлено на 30 днів і відлік почнеться заново.
+                            </p>
+                        </div>
+                        <div className="modal__footer">
+                            <div className="btn-group">
+                                <Button 
+                                    onClick={handleRenewSubscription}
+                                    loading={confirmModalState.loading}
+                                >
+                                    Так
+                                </Button>
+                                <Button 
+                                    className="btn--secondary" 
+                                    onClick={closeRenewModal}
+                                >
+                                    Ні
+                                </Button>
+                            </div>
                         </div>
                     </Modal>
                 )}

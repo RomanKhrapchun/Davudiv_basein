@@ -259,10 +259,9 @@ const updateServiceSchema = {
             numeric: true,
         }
     }
-    
 }
 
-// Схема для фільтрації клієнтів
+// Схема для фільтрації клієнтів - ЦЕ БУЛА ВІДСУТНЯ СХЕМА!
 const filterClientsSchema = {
     body: {
         page: {
@@ -306,6 +305,10 @@ const createClientSchema = {
         subscription_duration: {
             type: 'string',
             min: 1,
+        },
+        service_name: {
+            type: 'string',
+            optional: true,
         }
     }
 }
@@ -334,6 +337,20 @@ const updateClientSchema = {
         subscription_duration: {
             type: 'string',
             min: 1,
+        },
+        service_name: {
+            type: 'string',
+            optional: true,
+        }
+    }
+}
+
+// Нова схема для оновлення абонемента
+const renewSubscriptionSchema = {
+    params: {
+        id: {
+            type: 'string',
+            numeric: true,
         }
     }
 }
@@ -354,5 +371,6 @@ module.exports = {
     updateServiceSchema,
     filterClientsSchema,
     createClientSchema,
-    updateClientSchema
+    updateClientSchema,
+    renewSubscriptionSchema
 }

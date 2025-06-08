@@ -91,6 +91,7 @@ fastify.register(sportsComplexRouter, { prefix: "/api/sportscomplex" });
 fastify.register(revenueRouter, { prefix: "/api/revenue" });
 fastify.register(districtRouter, { prefix: "/api/district" });
 
+
 fastify.addHook("onSend", async (request, reply) => {
     if (request?.cookies?.['session'] && !request?.url?.includes('auth')) {
         await sessionStore.touch(request.cookies['session'])

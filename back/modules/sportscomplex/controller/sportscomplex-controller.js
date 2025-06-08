@@ -276,6 +276,20 @@ class SportsComplexController {
             return reply.code(500).send({ error: "Не вдалося видалити клієнта." });
         }
     }
+
+    async renewSubscription(request, reply) {
+        try {
+            const result = await sportsComplexService.renewSubscription(request);
+            return result;
+        } catch (error) {
+            logger.error("[renewSubscription]", error);
+            reply.status(error.statusCode || 500);
+            return { 
+                success: false, 
+                message: error.message || 'Внутрішня помилка сервера' 
+            };
+        }
+    }
 }
 
 module.exports = new SportsComplexController();

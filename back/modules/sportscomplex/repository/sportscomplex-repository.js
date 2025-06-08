@@ -434,18 +434,22 @@ class SportsComplexRepository {
         }
     }
 
-    async findClientsByFilter(limit, offset, displayFields, allowedFields) {
+    async findClientsByFilter(limit, offset, displayClientsFilterFields, allowedFields) {
         try {
-            let sql = `
-                SELECT json_agg(rw) as data,
-                COALESCE(max(cnt), 0) as count
-                FROM (
+            let sql = `SELECT json_agg(rw) as data, max(cnt) as cnt 
+                    FROM (
                     SELECT json_build_object(
                         'id', c.id,
                         'name', c.name,
                         'membership_number', c.membership_number,
                         'phone_number', c.phone_number,
+                        'service_name', COALESCE(c.service_name, 'Загальний доступ'),
+                        'visit_count', COALESCE(c.visit_count, 0),
                         'subscription_duration', c.subscription_duration,
+                        'subscription_days_left', COALESCE(c.subscription_days_left, 30),
+                        'subscription_active', COALESCE(c.subscription_active, true),
+                        'subscription_start_date', c.subscription_start_date,
+                        'subscription_end_date', c.subscription_end_date,
                         'created_at', c.created_at
                     ) as rw,
                     count(*) over() as cnt
@@ -475,15 +479,20 @@ class SportsComplexRepository {
         try {
             const sql = `
                 INSERT INTO sport.clients
-                (name, membership_number, phone_number, subscription_duration)
-                VALUES ($1, $2, $3, $4)
+                (name, membership_number, phone_number, subscription_duration, 
+                service_name, visit_count, subscription_start_date, subscription_end_date, 
+                subscription_days_left, subscription_active)
+                VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, 
+                        CURRENT_TIMESTAMP + INTERVAL '30 days', 30, true)
                 RETURNING id`;
                 
             const result = await sqlRequest(sql, [
                 data.name,
                 data.membership_number,
                 data.phone_number,
-                data.subscription_duration
+                data.subscription_duration,
+                data.service_name || 'Загальний доступ',
+                0 // Начальное количество посещений
             ]);
             
             return result[0];
@@ -498,8 +507,8 @@ class SportsComplexRepository {
             const sql = `
                 UPDATE sport.clients
                 SET name = $1, membership_number = $2, phone_number = $3, 
-                    subscription_duration = $4, updated_at = CURRENT_TIMESTAMP
-                WHERE id = $5
+                    subscription_duration = $4, service_name = $5, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $6
                 RETURNING id
             `;
             
@@ -508,6 +517,7 @@ class SportsComplexRepository {
                 data.membership_number,
                 data.phone_number,
                 data.subscription_duration,
+                data.service_name || 'Загальний доступ',
                 id
             ]);
             
@@ -521,7 +531,9 @@ class SportsComplexRepository {
     async getClientById(id) {
         try {
             const sql = `
-                SELECT id, name, membership_number, phone_number, subscription_duration
+                SELECT id, name, membership_number, phone_number, subscription_duration,
+                    service_name, visit_count, subscription_days_left, subscription_active,
+                    subscription_start_date, subscription_end_date, created_at, updated_at
                 FROM sport.clients
                 WHERE id = $1
             `;
@@ -533,13 +545,37 @@ class SportsComplexRepository {
         }
     }
 
-    async deleteClient(id) {
+    async renewClientSubscription(id) {
         try {
-            const sql = `DELETE FROM sport.clients WHERE id = $1 RETURNING id`;
+            const sql = `
+                UPDATE sport.clients
+                SET subscription_days_left = 30,
+                    subscription_active = true,
+                    subscription_start_date = CURRENT_TIMESTAMP,
+                    subscription_end_date = CURRENT_TIMESTAMP + INTERVAL '30 days'
+                WHERE id = $1
+                RETURNING id
+            `;
+            const result = await sqlRequest(sql, [id]);
+            return result.length > 0;
+        } catch (error) {
+            logger.error("[SportsComplexRepository][renewClientSubscription]", error);
+            throw error;
+        }
+    }
+
+    async incrementVisitCount(id) {
+        try {
+            const sql = `
+                UPDATE sport.clients
+                SET visit_count = visit_count + 1
+                WHERE id = $1
+                RETURNING visit_count
+            `;
             const result = await sqlRequest(sql, [id]);
             return result[0];
         } catch (error) {
-            logger.error("[SportsComplexRepository][deleteClient]", error);
+            logger.error("[SportsComplexRepository][incrementVisitCount]", error);
             throw error;
         }
     }
