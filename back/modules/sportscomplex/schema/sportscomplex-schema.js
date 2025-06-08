@@ -263,7 +263,7 @@ const updateServiceSchema = {
 
 // Схема для фільтрації клієнтів - ЦЕ БУЛА ВІДСУТНЯ СХЕМА!
 const filterClientsSchema = {
-    body: {
+    body: {  // Змінено з querystring на body
         page: {
             type: 'number',
             optional: true,

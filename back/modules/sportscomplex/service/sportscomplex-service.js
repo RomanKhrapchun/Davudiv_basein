@@ -452,6 +452,7 @@ class SportsComplexService {
 
     async findClientsByFilter(request) {
         try {
+            // Змінити request.body на request.query
             const { page = 1, limit = 16, ...whereConditions} = request.body;
             const { offset } = paginate(page, limit);
             
@@ -594,6 +595,46 @@ class SportsComplexService {
             }
         } catch (error) {
             logger.error("[SportsComplexService][renewSubscription]", error);
+            throw error;
+        }
+    }
+
+    async getClientById(id) {
+        try {
+            return await sportsComplexRepository.getClientById(id);
+        } catch (error) {
+            logger.error("[SportsComplexService][getClientById]", error);
+            throw error;
+        }
+    }
+
+    async deleteClient(request) {
+        try {
+            const { id } = request.params;
+            
+            const result = await sportsComplexRepository.deleteClient(id);
+            
+            if (!result) {
+                throw new Error('Клієнта не знайдено');
+            }
+            
+            await logRepository.createLog({
+                row_pk_id: id,
+                uid: request?.user?.id,
+                action: 'DELETE',
+                client_addr: request?.ip,
+                application_name: 'Видалення клієнта',
+                action_stamp_tx: new Date(),
+                action_stamp_stm: new Date(),
+                action_stamp_clk: new Date(),
+                schema_name: 'sport',
+                table_name: 'clients',
+                oid: '16507',
+            });
+            
+            return { success: true, message: 'Клієнта успішно видалено' };
+        } catch (error) {
+            logger.error("[SportsComplexService][deleteClient]", error);
             throw error;
         }
     }

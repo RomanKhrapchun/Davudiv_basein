@@ -70,11 +70,36 @@ async function sportsComplexRoutes(fastify, options) {
         handler: sportsComplexController.getServicesByGroup
     });
 
-    // Клієнти
     fastify.post("/clients/search", {
         schema: searchClientsSchema,
         handler: sportsComplexController.searchClients
     });
+
+    fastify.post("/clients", {
+        schema: createClientSchema,
+        handler: sportsComplexController.createClient
+    });
+
+    // 2. GET routes - СПЕЦИФІЧНІ ПЕРЕД ПАРАМЕТРИЧНИМИ!
+    fastify.post("/clients/filter", {
+        schema: filterClientsSchema,
+        handler: sportsComplexController.findClientsByFilter
+    });
+
+    // 3. PUT routes з специфічними шляхами ПЕРЕД загальним PUT
+    fastify.put("/clients/:id/renew-subscription", {
+        schema: renewSubscriptionSchema,
+        handler: sportsComplexController.renewSubscription
+    });
+
+    fastify.put("/clients/:id", {
+        schema: updateClientSchema,
+        handler: sportsComplexController.updateClient
+    });
+
+    // 4. DELETE та параметричний GET в кінці
+    fastify.delete("/clients/:id", sportsComplexController.deleteClient);
+    fastify.get("/clients/:id", sportsComplexController.getClientById);
 
     // Рахунки
     fastify.post("/bills/filter", {
@@ -95,31 +120,6 @@ async function sportsComplexRoutes(fastify, options) {
     });
 
     fastify.get("/bills/:id/download", sportsComplexController.downloadBill);
-
-    // Клієнти
-    fastify.post("/clients/filter", {
-        schema: filterClientsSchema,
-        handler: sportsComplexController.findClientsByFilter
-    });
-
-    fastify.post("/clients", {
-        schema: createClientSchema,
-        handler: sportsComplexController.createClient
-    });
-
-    fastify.get("/clients/:id", sportsComplexController.getClientById);
-
-    fastify.put("/clients/:id", {
-        schema: updateClientSchema,
-        handler: sportsComplexController.updateClient
-    });
-
-    fastify.delete("/clients/:id", sportsComplexController.deleteClient);
-
-    fastify.put("/clients/:id/renew-subscription", {
-        schema: renewSubscriptionSchema,
-        handler: sportsComplexController.renewSubscription
-    });
 }
 
 module.exports = sportsComplexRoutes;

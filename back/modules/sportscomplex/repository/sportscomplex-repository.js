@@ -579,6 +579,17 @@ class SportsComplexRepository {
             throw error;
         }
     }
+
+    async deleteClient(id) {
+        try {
+            const sql = `DELETE FROM sport.clients WHERE id = $1 RETURNING id`;
+            const result = await sqlRequest(sql, [id]);
+            return result[0];
+        } catch (error) {
+            logger.error("[SportsComplexRepository][deleteClient]", error);
+            throw error;
+        }
+    }
 }
 
 module.exports = new SportsComplexRepository();
