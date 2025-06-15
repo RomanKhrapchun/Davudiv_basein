@@ -30,6 +30,34 @@ const cancelIcon = generateIcon(iconMap.close);
 const dropDownStyle = { width: '100%' };
 const childDropDownStyle = { justifyContent: 'center' };
 
+// ✅ СПИСОК ПІЛЬГ
+const DISCOUNT_OPTIONS = [
+    {
+        id: 'orphans_heroes',
+        label: 'Дітям-сиротам, дітям із багатодітних сімей, дітям, батьки яких є героями'
+    },
+    {
+        id: 'refugees_heroes_war',
+        label: 'Дітям-біженцям, дітям з багатодітних сімей, дітям, батьки яких є героями війни або загинули'
+    },
+    {
+        id: 'disability_1_2',
+        label: 'Особам з інвалідністю I та II групи (мешканці Давидівської сільської територіальної громади)'
+    },
+    {
+        id: 'war_veterans',
+        label: 'Учасникам бойових дій та особам з інвалідністю внаслідок війни, які брали участь у бойових діях починаючи з 2014 року'
+    },
+    {
+        id: 'military_service',
+        label: 'Військовослужбовцям, які проходять службу у Збройних Силах України та інших військових формуваннях'
+    },
+    {
+        id: 'families_fallen',
+        label: 'Сім\'ям загиблих військовослужбовців, полонених та зниклих безвісти військових'
+    }
+];
+
 const Bills = () => {
     const navigate = useNavigate();
     const notification = useNotification();
@@ -51,23 +79,26 @@ const Bills = () => {
         }
     });
     
-    // Стан для модального вікна створення рахунку
+    // ✅ ОНОВЛЕНИЙ СТАН для модального вікна створення рахунку
     const [createModalState, setCreateModalState] = useState({
         isOpen: false,
         loading: false,
         formData: {
-            client_name: '',
             membership_number: '',
+            client_name: '',
             phone_number: '',
             service_group_id: '',
             service_id: '',
             visit_count: '',
             price: 0,
             total_price: 0,
+            discount_type: '',
+            discount_applied: false,
         },
         serviceGroups: [],
         services: [],
-        searchResults: [], // Результати пошуку клієнтів
+        searchResults: [],
+        isClientFound: false, // ✅ НОВИЙ СТАН для відстеження чи знайдено клієнта
     });
 
     // Стан для модального вікна редагування
@@ -76,18 +107,21 @@ const Bills = () => {
         loading: false,
         billId: null,
         formData: {
-            client_name: '',
             membership_number: '',
+            client_name: '',
             phone_number: '',
             service_group_id: '',
             service_id: '',
             visit_count: '',
             price: 0,
             total_price: 0,
+            discount_type: '',
+            discount_applied: false,
         },
         serviceGroups: [],
         services: [],
         searchResults: [],
+        isClientFound: false, // ✅ НОВИЙ СТАН для редагування
     });
     
     // Стан для модального вікна вибору клієнта
@@ -95,7 +129,7 @@ const Bills = () => {
         isOpen: false,
         clients: [],
         onSelect: null,
-        modalType: 'create' // 'create' або 'edit'
+        modalType: 'create'
     });
 
     // Завантаження даних рахунків
@@ -149,20 +183,27 @@ const Bills = () => {
     const startRecord = ((state.sendData.page || 1) - 1) * state.sendData.limit + 1;
     const endRecord = Math.min(startRecord + state.sendData.limit - 1, parseInt(data?.totalItems) || 1);
 
-    // Функція пошуку клієнтів по ПІБ
-    const searchClientsByName = async (name) => {
-        if (!name || name.length < 3) return [];
+    // ✅ ВИПРАВЛЕНА функція пошуку клієнтів по номеру абонемента
+    const searchClientByMembership = async (membershipNumber) => {
+        console.log('🔍 Шукаємо клієнта з номером:', membershipNumber);
+        
+        if (!membershipNumber || membershipNumber.length < 5) {
+            console.log('⚠️ Номер занадто короткий:', membershipNumber);
+            return null;
+        }
         
         try {
-            const response = await fetchFunction(`/api/sportscomplex/clients/search`, {
+            const response = await fetchFunction(`/api/sportscomplex/clients/search-by-membership`, {
                 method: 'post',
-                data: { name }
+                data: { membership_number: membershipNumber }
             });
             
-            return response?.data || [];
+            console.log('📥 Відповідь від сервера:', response);
+            // ✅ ВИПРАВЛЕННЯ: правильно отримуємо дані з відповіді
+            return response?.data?.data || null;
         } catch (error) {
-            console.error('Помилка пошуку клієнтів:', error);
-            return [];
+            console.error('❌ Помилка пошуку клієнта:', error);
+            return null;
         }
     };
 
@@ -206,48 +247,59 @@ const Bills = () => {
         }
     };
 
-    // Визначення колонок таблиці
+    // ✅ ОНОВЛЕНІ КОЛОНКИ таблиці з додаванням колонки пільги
     const columnTable = useMemo(() => [
         {
             title: 'Номер абонемента',
             dataIndex: 'membership_number',
-            width: '12%'
+            width: '10%'
         },
         {
             title: 'ПІБ клієнта',
             dataIndex: 'client_name',
-            width: '15%'
+            width: '12%'
         },
         {
             title: 'Номер телефону',
             dataIndex: 'phone_number',
-            width: '12%'
+            width: '10%'
         },
         {
             title: 'Група послуг',
             dataIndex: 'service_group',
-            width: '12%'
+            width: '10%'
         },
         {
             title: 'Послуга',
             dataIndex: 'service_name',
-            width: '15%'
+            width: '12%'
         },
         {
             title: 'Кількість відвідувань',
             dataIndex: 'visit_count',
-            width: '10%'
+            width: '8%'
         },
         {
             title: 'Ціна',
             dataIndex: 'total_price',
-            width: '10%',
+            width: '8%',
             render: (price) => `${price} грн`
+        },
+        // ✅ НОВА КОЛОНКА - Пільга
+        {
+            title: 'Пільга',
+            dataIndex: 'discount_type',
+            width: '15%',
+            render: (discountType) => {
+                if (!discountType) return '—';
+                const discount = DISCOUNT_OPTIONS.find(d => d.id === discountType);
+                return discount ? discount.label : '—';
+            }
         },
         {
             title: 'Дія',
             dataIndex: 'action',
-            width: '14%',
+            width: '15%',
             render: (_, record) => (
                 <div className="btn-sticky" style={{ justifyContent: 'center' }}>
                     <Button
@@ -265,7 +317,7 @@ const Bills = () => {
         }
     ], []);
 
-    // Підготовка даних для таблиці
+    // ✅ ОНОВЛЕНА підготовка даних для таблиці
     const tableData = useMemo(() => {
         if (!Array.isArray(data?.items)) return [];
         return data.items.map(el => ({
@@ -277,7 +329,8 @@ const Bills = () => {
             service_group: el.service_group,
             service_name: el.service_name,
             visit_count: el.visit_count,
-            total_price: el.total_price
+            total_price: el.total_price,
+            discount_type: el.discount_type
         }));
     }, [data]);
 
@@ -300,86 +353,136 @@ const Bills = () => {
         selectData: {...prev.selectData, [name]: value}
     }));
 
-    // Функції для модального вікна створення
+    // ✅ ВИПРАВЛЕНА функція для зміни полів форми створення
     const onCreateFormChange = async (name, value) => {
-        setCreateModalState(prev => {
-            const updatedFormData = { ...prev.formData, [name]: value };
-            return { ...prev, formData: updatedFormData };
-        });
+        console.log('🔥 onCreateFormChange:', name, value);
 
-        // Якщо змінюється ПІБ клієнта, шукаємо клієнтів
-        if (name === 'client_name' && value.length >= 3) {
-            const clients = await searchClientsByName(value);
-            if (clients.length > 1) {
-                // Якщо знайдено кілька клієнтів, показуємо модальне вікно вибору
-                setClientSelectModalState({
-                    isOpen: true,
-                    clients: clients,
-                    modalType: 'create',
-                    onSelect: (selectedClient) => {
-                        setCreateModalState(prev => ({
-                            ...prev,
-                            formData: {
-                                ...prev.formData,
-                                client_name: selectedClient.name,
-                                membership_number: selectedClient.membership_number,
-                                phone_number: selectedClient.phone_number
-                            }
-                        }));
-                    }
-                });
-            } else if (clients.length === 1) {
-                // Якщо знайдено одного клієнта, автоматично заповнюємо поля
+        // Спочатку оновлюємо стан
+        setCreateModalState(prev => ({
+            ...prev,
+            formData: {
+                ...prev.formData,
+                [name]: value
+            }
+        }));
+
+        // ✅ АВТОЗАПОВНЕННЯ при введенні номера абонемента
+        if (name === 'membership_number' && value.length >= 5) {
+            console.log('🔍 Початок пошуку клієнта для номера:', value);
+            
+            try {
+                const client = await searchClientByMembership(value);
+                console.log('✅ Результат пошуку клієнта:', client);
+                
+                if (client) {
+                    setCreateModalState(prev => ({
+                        ...prev,
+                        formData: {
+                            ...prev.formData,
+                            client_name: client.name || '',
+                            phone_number: client.phone_number || ''
+                        },
+                        isClientFound: true // ✅ ПОЗНАЧАЄМО ЩО КЛІЄНТА ЗНАЙДЕНО
+                    }));
+                    console.log('✅ Дані клієнта заповнені:', client.name, client.phone_number);
+                } else {
+                    // Очищаємо поля, якщо клієнт не знайдений
+                    setCreateModalState(prev => ({
+                        ...prev,
+                        formData: {
+                            ...prev.formData,
+                            client_name: '',
+                            phone_number: ''
+                        },
+                        isClientFound: false // ✅ ПОЗНАЧАЄМО ЩО КЛІЄНТА НЕ ЗНАЙДЕНО
+                    }));
+                    console.log('❌ Клієнта не знайдено, поля очищено');
+                }
+            } catch (error) {
+                console.error('❌ Помилка під час пошуку:', error);
                 setCreateModalState(prev => ({
                     ...prev,
-                    formData: {
-                        ...prev.formData,
-                        membership_number: clients[0].membership_number,
-                        phone_number: clients[0].phone_number
-                    }
+                    isClientFound: false
                 }));
             }
+        }
+
+        // ✅ ОЧИЩАЄМО СТАТУС ПОШУКУ ЯКЩО НОМЕР АБОНЕМЕНТА ЗМІНИВСЯ
+        if (name === 'membership_number' && value.length < 5) {
+            setCreateModalState(prev => ({
+                ...prev,
+                isClientFound: false,
+                formData: {
+                    ...prev.formData,
+                    client_name: '',
+                    phone_number: ''
+                }
+            }));
         }
     };
 
     // Функції для модального вікна редагування
     const onEditFormChange = async (name, value) => {
-        setEditModalState(prev => {
-            const updatedFormData = { ...prev.formData, [name]: value };
-            return { ...prev, formData: updatedFormData };
-        });
+        setEditModalState(prev => ({
+            ...prev,
+            formData: {
+                ...prev.formData,
+                [name]: value
+            }
+        }));
 
-        // Аналогічна логіка для редагування
-        if (name === 'client_name' && value.length >= 3) {
-            const clients = await searchClientsByName(value);
-            if (clients.length > 1) {
-                setClientSelectModalState({
-                    isOpen: true,
-                    clients: clients,
-                    modalType: 'edit',
-                    onSelect: (selectedClient) => {
-                        setEditModalState(prev => ({
-                            ...prev,
-                            formData: {
-                                ...prev.formData,
-                                client_name: selectedClient.name,
-                                membership_number: selectedClient.membership_number,
-                                phone_number: selectedClient.phone_number
-                            }
-                        }));
-                    }
-                });
-            } else if (clients.length === 1) {
+        if (name === 'membership_number' && value.length >= 5) {
+            const client = await searchClientByMembership(value);
+            if (client) {
                 setEditModalState(prev => ({
                     ...prev,
                     formData: {
                         ...prev.formData,
-                        membership_number: clients[0].membership_number,
-                        phone_number: clients[0].phone_number
-                    }
+                        client_name: client.name,
+                        phone_number: client.phone_number
+                    },
+                    isClientFound: true
+                }));
+            } else {
+                setEditModalState(prev => ({
+                    ...prev,
+                    isClientFound: false
                 }));
             }
         }
+
+        if (name === 'membership_number' && value.length < 5) {
+            setEditModalState(prev => ({
+                ...prev,
+                isClientFound: false,
+                formData: {
+                    ...prev.formData,
+                    client_name: '',
+                    phone_number: ''
+                }
+            }));
+        }
+    };
+
+    // ✅ ФУНКЦІЯ для обробки зміни пільги
+    const handleDiscountChange = (discountId, modalType = 'create') => {
+        const setState = modalType === 'create' ? setCreateModalState : setEditModalState;
+        
+        setState(prev => {
+            const discountApplied = discountId ? true : false;
+            const basePrice = prev.formData.price || 0;
+            const finalPrice = discountApplied ? Math.round(basePrice * 0.5) : basePrice;
+            
+            return {
+                ...prev,
+                formData: {
+                    ...prev.formData,
+                    discount_type: discountId,
+                    discount_applied: discountApplied,
+                    total_price: finalPrice
+                }
+            };
+        });
     };
 
     // Обробка вибору групи послуг
@@ -417,7 +520,7 @@ const Bills = () => {
         }
     };
 
-    // Обробка вибору послуги
+    // ✅ ОНОВЛЕНА обробка вибору послуги (з урахуванням пільги)
     const handleServiceChange = (name, option, modalType = 'create') => {
         if (!option) return;
         
@@ -428,6 +531,11 @@ const Bills = () => {
         
         if (serviceOption) {
             const { label, visit_count, price } = serviceOption;
+            const currentDiscount = modalType === 'create' ? 
+                createModalState.formData.discount_applied : 
+                editModalState.formData.discount_applied;
+            
+            const finalPrice = currentDiscount ? Math.round(price * 0.5) : price;
 
             if (modalType === 'create') {
                 setCreateModalState(prev => ({
@@ -437,7 +545,7 @@ const Bills = () => {
                         service_id: option,
                         visit_count,
                         price,
-                        total_price: price
+                        total_price: finalPrice
                     }
                 }));
             } else {
@@ -448,7 +556,7 @@ const Bills = () => {
                         service_id: option,
                         visit_count,
                         price,
-                        total_price: price
+                        total_price: finalPrice
                     }
                 }));
             }
@@ -490,15 +598,18 @@ const Bills = () => {
             ...prev,
             isOpen: true,
             formData: {
-                client_name: '',
                 membership_number: '',
+                client_name: '',
                 phone_number: '',
                 service_group_id: '',
                 service_id: '',
                 visit_count: '',
                 price: 0,
-                total_price: 0
-            }
+                total_price: 0,
+                discount_type: '',
+                discount_applied: false,
+            },
+            isClientFound: false // ✅ СКИДАЄМО СТАТУС ПОШУКУ
         }));
         document.body.style.overflow = 'hidden';
     };
@@ -510,7 +621,6 @@ const Bills = () => {
 
     // Функції для модального вікна редагування
     const handleOpenEditModal = async (bill) => {
-        // Завантажуємо повні дані рахунку
         try {
             const response = await fetchFunction(`/api/sportscomplex/bills/${bill.id}`, {
                 method: 'get'
@@ -523,18 +633,20 @@ const Bills = () => {
                 isOpen: true,
                 billId: bill.id,
                 formData: {
-                    client_name: billData.client_name,
                     membership_number: billData.membership_number,
+                    client_name: billData.client_name,
                     phone_number: billData.phone_number,
                     service_group_id: { value: billData.service_group_id, label: billData.service_group },
                     service_id: { value: billData.service_id, label: billData.service_name },
                     visit_count: billData.visit_count,
                     price: billData.price,
-                    total_price: billData.total_price
-                }
+                    total_price: billData.total_price,
+                    discount_type: billData.discount_type || '',
+                    discount_applied: !!billData.discount_type,
+                },
+                isClientFound: true // ✅ ВСТАНОВЛЮЄМО ЩО КЛІЄНТА ЗНАЙДЕНО
             }));
             
-            // Завантажуємо послуги для групи
             if (billData.service_group_id) {
                 loadServicesForGroup(billData.service_group_id, 'edit');
             }
@@ -555,16 +667,27 @@ const Bills = () => {
         document.body.style.overflow = 'auto';
     };
 
-    // Функція для створення рахунку
+    // ✅ ФУНКЦІЯ для створення рахунку
     const handleCreateFormSubmit = async () => {
-        const { client_name, membership_number, phone_number, service_id } = createModalState.formData;
+        const { membership_number, client_name, phone_number, service_id, discount_type } = createModalState.formData;
         
-        if (!client_name || !membership_number || !phone_number || !service_id) {
+        if (!membership_number || !client_name || !phone_number || !service_id) {
             notification({
                 type: 'warning',
                 placement: 'top',
                 title: 'Помилка',
                 message: 'Всі поля форми обов\'язкові для заповнення',
+            });
+            return;
+        }
+
+        // ✅ ПЕРЕВІРКА ЧИ ЗНАЙДЕНО КЛІЄНТА
+        if (!createModalState.isClientFound) {
+            notification({
+                type: 'warning',
+                placement: 'top',
+                title: 'Помилка',
+                message: 'Клієнта з таким номером абонемента не знайдено. Перевірте номер або створіть клієнта в розділі "Клієнти".',
             });
             return;
         }
@@ -577,10 +700,11 @@ const Bills = () => {
             await fetchFunction('/api/sportscomplex/bills', {
                 method: 'post',
                 data: {
-                    client_name,
                     membership_number,
+                    client_name,
                     phone_number,
-                    service_id: serviceIdValue
+                    service_id: serviceIdValue,
+                    discount_type: discount_type || null
                 }
             });
             
@@ -620,11 +744,11 @@ const Bills = () => {
         }
     };
 
-    // Функція для редагування рахунку
+    // ✅ ФУНКЦІЯ для редагування рахунку
     const handleEditFormSubmit = async () => {
-        const { client_name, membership_number, phone_number, service_id } = editModalState.formData;
+        const { membership_number, client_name, phone_number, service_id, discount_type } = editModalState.formData;
         
-        if (!client_name || !membership_number || !phone_number || !service_id) {
+        if (!membership_number || !client_name || !phone_number || !service_id) {
             notification({
                 type: 'warning',
                 placement: 'top',
@@ -642,10 +766,11 @@ const Bills = () => {
             await fetchFunction(`/api/sportscomplex/bills/${editModalState.billId}`, {
                 method: 'put',
                 data: {
-                    client_name,
                     membership_number,
+                    client_name,
                     phone_number,
-                    service_id: serviceIdValue
+                    service_id: serviceIdValue,
+                    discount_type: discount_type || null
                 }
             });
             
@@ -766,7 +891,7 @@ const Bills = () => {
                     <div className="table-header">
                         <h2 className="title title--sm">
                             {data?.items?.length ? 
-                                `Показує ${startRecord}-${endRecord} з ${data?.totalItems}` : 
+                                `Показує ${startRecord !== endRecord ? `${startRecord}-${endRecord}` : startRecord} з ${data?.totalItems || 1}` : 
                                 'Записів не знайдено'
                             }
                         </h2>
@@ -850,7 +975,7 @@ const Bills = () => {
                 </div>
             )}
             
-            {/* Модальне вікно для створення нового рахунку */}
+            {/* ✅ ВИПРАВЛЕНЕ модальне вікно для створення нового рахунку */}
             <Transition in={createModalState.isOpen} timeout={200} unmountOnExit nodeRef={addFormRef}>
                 {transitionState => (
                     <Modal
@@ -861,22 +986,10 @@ const Bills = () => {
                         cancelText="Скасувати"
                         okText="Зберегти"
                         title="Створення нового рахунку"
-                        width="600px"
+                        width="700px"
                     >
                         <div className="form-container">
-                            <FormItem 
-                                label="ПІБ клієнта" 
-                                required 
-                                fullWidth
-                            >
-                                <Input
-                                    name="client_name"
-                                    value={createModalState.formData.client_name}
-                                    onChange={onCreateFormChange}
-                                    placeholder="Введіть ПІБ клієнта"
-                                />
-                            </FormItem>
-                            
+                            {/* ✅ ПЕРШЕ ПОЛЕ - Номер абонемента */}
                             <FormItem 
                                 label="Номер абонемента" 
                                 required 
@@ -886,8 +999,45 @@ const Bills = () => {
                                     name="membership_number"
                                     value={createModalState.formData.membership_number}
                                     onChange={onCreateFormChange}
-                                    placeholder="Автоматично заповнюється"
-                                    disabled={true}
+                                    placeholder="Введіть номер абонемента"
+                                />
+                            </FormItem>
+                            
+                            {/* ✅ ІНДИКАТОР ПОШУКУ КЛІЄНТА */}
+                            {createModalState.formData.membership_number.length >= 5 && (
+                                <div style={{ 
+                                    padding: '8px 12px', 
+                                    borderRadius: '4px',
+                                    fontSize: '14px',
+                                    marginBottom: '16px',
+                                    backgroundColor: createModalState.isClientFound ? '#e6f7ff' : '#fff2e8',
+                                    border: `1px solid ${createModalState.isClientFound ? '#91d5ff' : '#ffcc99'}`,
+                                    color: createModalState.isClientFound ? '#096dd9' : '#d46b08'
+                                }}>
+                                    {createModalState.isClientFound ? 
+                                        '✅ Клієнта знайдено! Дані автоматично заповнені.' : 
+                                        '⚠️ Клієнта з таким номером абонемента не знайдено.'}
+                                </div>
+                            )}
+                            
+                            {/* ✅ ПОЛЯ ПІБ ТА ТЕЛЕФОН - тепер disabled коли клієнта знайдено */}
+                            <FormItem 
+                                label="ПІБ клієнта" 
+                                required 
+                                fullWidth
+                            >
+                                <Input
+                                    name="client_name"
+                                    value={createModalState.formData.client_name}
+                                    onChange={onCreateFormChange}
+                                    placeholder={createModalState.isClientFound ? 
+                                        "Автоматично заповнено" : 
+                                        "Спочатку введіть номер абонемента"}
+                                    disabled={createModalState.isClientFound}
+                                    style={{ 
+                                        backgroundColor: createModalState.isClientFound ? '#f5f5f5' : 'white',
+                                        color: createModalState.isClientFound ? '#666' : 'inherit'
+                                    }}
                                 />
                             </FormItem>
                             
@@ -900,8 +1050,14 @@ const Bills = () => {
                                     name="phone_number"
                                     value={createModalState.formData.phone_number}
                                     onChange={onCreateFormChange}
-                                    placeholder="Автоматично заповнюється"
-                                    disabled={true}
+                                    placeholder={createModalState.isClientFound ? 
+                                        "Автоматично заповнено" : 
+                                        "Спочатку введіть номер абонемента"}
+                                    disabled={createModalState.isClientFound}
+                                    style={{ 
+                                        backgroundColor: createModalState.isClientFound ? '#f5f5f5' : 'white',
+                                        color: createModalState.isClientFound ? '#666' : 'inherit'
+                                    }}
                                 />
                             </FormItem>
                             
@@ -932,6 +1088,43 @@ const Bills = () => {
                                 />
                             </FormItem>
                             
+                            {/* ✅ БЛОК ПІЛЬГ */}
+                            <FormItem 
+                                label="Пільги (знижка 50%)" 
+                                fullWidth
+                            >
+                                <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid #ddd', padding: '10px', borderRadius: '4px' }}>
+                                    {DISCOUNT_OPTIONS.map(discount => (
+                                        <div key={discount.id} style={{ marginBottom: '8px' }}>
+                                            <label style={{ display: 'flex', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px' }}>
+                                                <input
+                                                    type="radio"
+                                                    name="discount_type"
+                                                    value={discount.id}
+                                                    checked={createModalState.formData.discount_type === discount.id}
+                                                    onChange={(e) => handleDiscountChange(e.target.value, 'create')}
+                                                    style={{ marginRight: '8px', marginTop: '2px' }}
+                                                />
+                                                <span style={{ lineHeight: '1.4' }}>{discount.label}</span>
+                                            </label>
+                                        </div>
+                                    ))}
+                                    <div style={{ marginBottom: '8px' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px' }}>
+                                            <input
+                                                type="radio"
+                                                name="discount_type"
+                                                value=""
+                                                checked={!createModalState.formData.discount_type}
+                                                onChange={(e) => handleDiscountChange('', 'create')}
+                                                style={{ marginRight: '8px' }}
+                                            />
+                                            <span>Без пільги</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </FormItem>
+                            
                             <div className="form-row" style={{display: 'flex', gap: '16px'}}>
                                 <FormItem 
                                     label="Кількість відвідувань" 
@@ -955,12 +1148,26 @@ const Bills = () => {
                                     />
                                 </FormItem>
                             </div>
+                            
+                            {/* ✅ ІНДИКАТОР ПІЛЬГИ */}
+                            {createModalState.formData.discount_applied && (
+                                <div style={{ 
+                                    padding: '10px', 
+                                    backgroundColor: '#e6f7ff', 
+                                    border: '1px solid #91d5ff', 
+                                    borderRadius: '4px',
+                                    fontSize: '14px',
+                                    color: '#096dd9'
+                                }}>
+                                    ✅ Застосована знижка 50% за пільгою
+                                </div>
+                            )}
                         </div>
                     </Modal>
                 )}
             </Transition>
             
-            {/* Модальне вікно для редагування рахунку */}
+            {/* ✅ МОДАЛЬНЕ ВІКНО для редагування рахунку */}
             <Transition in={editModalState.isOpen} timeout={200} unmountOnExit nodeRef={editFormRef}>
                 {transitionState => (
                     <Modal
@@ -971,22 +1178,9 @@ const Bills = () => {
                         cancelText="Скасувати"
                         okText="Зберегти"
                         title="Редагування рахунку"
-                        width="600px"
+                        width="700px"
                     >
                         <div className="form-container">
-                            <FormItem 
-                                label="ПІБ клієнта" 
-                                required 
-                                fullWidth
-                            >
-                                <Input
-                                    name="client_name"
-                                    value={editModalState.formData.client_name}
-                                    onChange={onEditFormChange}
-                                    placeholder="Введіть ПІБ клієнта"
-                                />
-                            </FormItem>
-                            
                             <FormItem 
                                 label="Номер абонемента" 
                                 required 
@@ -996,8 +1190,42 @@ const Bills = () => {
                                     name="membership_number"
                                     value={editModalState.formData.membership_number}
                                     onChange={onEditFormChange}
+                                    placeholder="Введіть номер абонемента"
+                                />
+                            </FormItem>
+                            
+                            {/* ✅ ІНДИКАТОР ПОШУКУ КЛІЄНТА для редагування */}
+                            {editModalState.formData.membership_number.length >= 5 && (
+                                <div style={{ 
+                                    padding: '8px 12px', 
+                                    borderRadius: '4px',
+                                    fontSize: '14px',
+                                    marginBottom: '16px',
+                                    backgroundColor: editModalState.isClientFound ? '#e6f7ff' : '#fff2e8',
+                                    border: `1px solid ${editModalState.isClientFound ? '#91d5ff' : '#ffcc99'}`,
+                                    color: editModalState.isClientFound ? '#096dd9' : '#d46b08'
+                                }}>
+                                    {editModalState.isClientFound ? 
+                                        '✅ Клієнта знайдено! Дані автоматично заповнені.' : 
+                                        '⚠️ Клієнта з таким номером абонемента не знайдено.'}
+                                </div>
+                            )}
+                            
+                            <FormItem 
+                                label="ПІБ клієнта" 
+                                required 
+                                fullWidth
+                            >
+                                <Input
+                                    name="client_name"
+                                    value={editModalState.formData.client_name}
+                                    onChange={onEditFormChange}
                                     placeholder="Автоматично заповнюється"
-                                    disabled={true}
+                                    disabled={editModalState.isClientFound}
+                                    style={{ 
+                                        backgroundColor: editModalState.isClientFound ? '#f5f5f5' : 'white',
+                                        color: editModalState.isClientFound ? '#666' : 'inherit'
+                                    }}
                                 />
                             </FormItem>
                             
@@ -1011,7 +1239,11 @@ const Bills = () => {
                                     value={editModalState.formData.phone_number}
                                     onChange={onEditFormChange}
                                     placeholder="Автоматично заповнюється"
-                                    disabled={true}
+                                    disabled={editModalState.isClientFound}
+                                    style={{ 
+                                        backgroundColor: editModalState.isClientFound ? '#f5f5f5' : 'white',
+                                        color: editModalState.isClientFound ? '#666' : 'inherit'
+                                    }}
                                 />
                             </FormItem>
                             
@@ -1042,6 +1274,42 @@ const Bills = () => {
                                 />
                             </FormItem>
                             
+                            <FormItem 
+                                label="Пільги (знижка 50%)" 
+                                fullWidth
+                            >
+                                <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid #ddd', padding: '10px', borderRadius: '4px' }}>
+                                    {DISCOUNT_OPTIONS.map(discount => (
+                                        <div key={discount.id} style={{ marginBottom: '8px' }}>
+                                            <label style={{ display: 'flex', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px' }}>
+                                                <input
+                                                    type="radio"
+                                                    name="discount_type"
+                                                    value={discount.id}
+                                                    checked={editModalState.formData.discount_type === discount.id}
+                                                    onChange={(e) => handleDiscountChange(e.target.value, 'edit')}
+                                                    style={{ marginRight: '8px', marginTop: '2px' }}
+                                                />
+                                                <span style={{ lineHeight: '1.4' }}>{discount.label}</span>
+                                            </label>
+                                        </div>
+                                    ))}
+                                    <div style={{ marginBottom: '8px' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px' }}>
+                                            <input
+                                                type="radio"
+                                                name="discount_type"
+                                                value=""
+                                                checked={!editModalState.formData.discount_type}
+                                                onChange={(e) => handleDiscountChange('', 'edit')}
+                                                style={{ marginRight: '8px' }}
+                                            />
+                                            <span>Без пільги</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </FormItem>
+                            
                             <div className="form-row" style={{display: 'flex', gap: '16px'}}>
                                 <FormItem 
                                     label="Кількість відвідувань" 
@@ -1065,47 +1333,19 @@ const Bills = () => {
                                     />
                                 </FormItem>
                             </div>
-                        </div>
-                    </Modal>
-                )}
-            </Transition>
-            
-            {/* Модальне вікно для вибору клієнта */}
-            <Transition in={clientSelectModalState.isOpen} timeout={200} unmountOnExit nodeRef={clientSelectRef}>
-                {transitionState => (
-                    <Modal
-                        className={transitionState === 'entered' ? "modal-window-wrapper--active" : ""}
-                        onClose={closeClientSelectModal}
-                        cancelText="Скасувати"
-                        title="Виберіть клієнта"
-                        width="500px"
-                        showOkButton={false}
-                    >
-                        <div className="client-select-container">
-                            <p className="paragraph">Знайдено кілька клієнтів з таким ПІБ. Виберіть потрібного:</p>
-                            <div className="client-list">
-                                {clientSelectModalState.clients.map((client, index) => (
-                                    <div 
-                                        key={index} 
-                                        className="client-item"
-                                        onClick={() => handleClientSelect(client)}
-                                        style={{
-                                            padding: '12px',
-                                            border: '1px solid #ddd',
-                                            borderRadius: '6px',
-                                            marginBottom: '8px',
-                                            cursor: 'pointer',
-                                            transition: 'background-color 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => e.target.style.backgroundColor = '#f5f5f5'}
-                                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                                    >
-                                        <div><strong>{client.name}</strong></div>
-                                        <div>Телефон: {client.phone_number}</div>
-                                        <div>Абонемент: {client.membership_number}</div>
-                                    </div>
-                                ))}
-                            </div>
+                            
+                            {editModalState.formData.discount_applied && (
+                                <div style={{ 
+                                    padding: '10px', 
+                                    backgroundColor: '#e6f7ff', 
+                                    border: '1px solid #91d5ff', 
+                                    borderRadius: '4px',
+                                    fontSize: '14px',
+                                    color: '#096dd9'
+                                }}>
+                                    ✅ Застосована знижка 50% за пільгою
+                                </div>
+                            )}
                         </div>
                     </Modal>
                 )}

@@ -132,7 +132,7 @@ class SportsComplexController {
             return reply.code(500).send({ error: "Не вдалося отримати рахунок." });
         }
     }
-
+    
     async updateBillStatus(request, reply) {
         try {
             const result = await sportsComplexService.updateBillStatus(request);
@@ -258,12 +258,34 @@ class SportsComplexController {
     }
 
     async getClientById(request, reply) {
+        console.log("getClientById викликано з параметрами:", request.params);
+        console.log("URL:", request.url);
+        console.log("Method:", request.method);
+
         try {
-            const data = await sportsComplexService.getClientById(request.params.id);
+            const id = parseInt(request.params.id);
+            
+            // Валідація ID
+            if (isNaN(id) || id <= 0) {
+                return reply.code(400).send({ 
+                    error: "Неправильний ID клієнта" 
+                });
+            }
+            
+            const data = await sportsComplexService.getClientById(id);
+            
+            if (!data) {
+                return reply.code(404).send({ 
+                    error: "Клієнта не знайдено" 
+                });
+            }
+            
             return reply.send(data);
         } catch (error) {
             logger.error("[getClientById]", error);
-            return reply.code(500).send({ error: "Не вдалося отримати клієнта." });
+            return reply.code(500).send({ 
+                error: "Не вдалося отримати клієнта." 
+            });
         }
     }
 
@@ -288,6 +310,26 @@ class SportsComplexController {
                 success: false, 
                 message: error.message || 'Внутрішня помилка сервера' 
             };
+        }
+    }
+
+    async startLesson(request, reply) {
+        try {
+            const result = await sportsComplexService.startLesson(request);
+            return reply.send(result);
+        } catch (error) {
+            logger.error("[startLesson]", error);
+            return reply.code(500).send({ error: "Не вдалося розпочати заняття." });
+        }
+    }
+
+    async searchClientByMembership(request, reply) {
+        try {
+            const data = await sportsComplexService.searchClientByMembership(request);
+            return reply.send(data);
+        } catch (error) {
+            logger.error("[searchClientByMembership]", error);
+            return reply.code(500).send({ error: "Не вдалося знайти клієнта." });
         }
     }
 }

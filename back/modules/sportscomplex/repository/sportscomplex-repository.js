@@ -215,13 +215,14 @@ class SportsComplexRepository {
             
             const service = serviceInfo[0];
             
-            const sql = `
+            // Створюємо рахунок
+            const billSql = `
                 INSERT INTO sport.payments
                 (client_name, membership_number, phone_number, service_id, visit_count, total_price)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id`;
                 
-            const result = await sqlRequest(sql, [
+            const billResult = await sqlRequest(billSql, [
                 data.client_name,
                 data.membership_number,
                 data.phone_number,
@@ -230,7 +231,24 @@ class SportsComplexRepository {
                 service.price
             ]);
             
-            return result[0];
+            const updateClientSql = `
+                UPDATE sport.clients
+                SET current_service_id = $1,
+                    current_service_name = $2,
+                    remaining_visits = $3,
+                    last_bill_id = $4
+                WHERE membership_number = $5
+            `;
+            
+            await sqlRequest(updateClientSql, [
+                service.id,
+                service.name,
+                service.lesson_count,
+                billResult[0].id,
+                data.membership_number
+            ]);
+            
+            return billResult[0];
         } catch (error) {
             logger.error("[SportsComplexRepository][createBill]", error);
             throw error;
@@ -436,15 +454,16 @@ class SportsComplexRepository {
 
     async findClientsByFilter(limit, offset, displayClientsFilterFields, allowedFields) {
         try {
-            let sql = `SELECT json_agg(rw) as data, max(cnt) as cnt 
+            let sql = `SELECT json_agg(rw) as data,
+                    COALESCE(max(cnt), 0) as count
                     FROM (
                     SELECT json_build_object(
                         'id', c.id,
                         'name', c.name,
                         'membership_number', c.membership_number,
                         'phone_number', c.phone_number,
-                        'service_name', COALESCE(c.service_name, 'Загальний доступ'),
-                        'visit_count', COALESCE(c.visit_count, 0),
+                        'current_service_name', COALESCE(c.current_service_name, 'Немає активної послуги'),
+                        'remaining_visits', COALESCE(c.remaining_visits, 0),
                         'subscription_duration', c.subscription_duration,
                         'subscription_days_left', COALESCE(c.subscription_days_left, 30),
                         'subscription_active', COALESCE(c.subscription_active, true),
@@ -480,19 +499,19 @@ class SportsComplexRepository {
             const sql = `
                 INSERT INTO sport.clients
                 (name, membership_number, phone_number, subscription_duration, 
-                service_name, visit_count, subscription_start_date, subscription_end_date, 
-                subscription_days_left, subscription_active)
-                VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, 
-                        CURRENT_TIMESTAMP + INTERVAL '30 days', 30, true)
+                subscription_start_date, subscription_end_date, 
+                subscription_days_left, subscription_active, visit_count,
+                current_service_name, remaining_visits)
+                VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, 
+                        CURRENT_TIMESTAMP + INTERVAL '30 days', 30, true, 0,
+                        'Немає активної послуги', 0)
                 RETURNING id`;
                 
             const result = await sqlRequest(sql, [
                 data.name,
                 data.membership_number,
                 data.phone_number,
-                data.subscription_duration,
-                data.service_name || 'Загальний доступ',
-                0 // Начальное количество посещений
+                '30 днів' // Фіксована тривалість
             ]);
             
             return result[0];
@@ -587,6 +606,326 @@ class SportsComplexRepository {
             return result[0];
         } catch (error) {
             logger.error("[SportsComplexRepository][deleteClient]", error);
+            throw error;
+        }
+    }
+
+    async startLesson(clientId) {
+        try {
+            // Перевіряємо поточну кількість відвідувань
+            const checkSql = `
+                SELECT remaining_visits, current_service_name 
+                FROM sport.clients 
+                WHERE id = $1
+            `;
+            const clientData = await sqlRequest(checkSql, [clientId]);
+            
+            if (!clientData.length) {
+                return { success: false, message: 'Клієнта не знайдено' };
+            }
+            
+            const remainingVisits = clientData[0].remaining_visits || 0;
+            
+            if (remainingVisits <= 0) {
+                return { 
+                    success: false, 
+                    message: 'Кількість занять використана, будь ласка оновіть абонемент.' 
+                };
+            }
+            
+            // Зменшуємо кількість відвідувань на 1
+            const updateSql = `
+                UPDATE sport.clients
+                SET remaining_visits = remaining_visits - 1
+                WHERE id = $1
+                RETURNING remaining_visits
+            `;
+            
+            const result = await sqlRequest(updateSql, [clientId]);
+            
+            return { 
+                success: true, 
+                message: 'Заняття успішно розпочато',
+                remaining_visits: result[0].remaining_visits
+            };
+        } catch (error) {
+            logger.error("[SportsComplexRepository][startLesson]", error);
+            throw error;
+        }
+    }
+
+    async searchClientByMembership(membershipNumber) {
+        const sql = `
+            SELECT name, phone_number, membership_number
+            FROM sport.clients
+            WHERE membership_number = $1
+            LIMIT 1
+        `;
+        try {
+            const result = await sqlRequest(sql, [membershipNumber]);
+            return result[0] || null;
+        } catch (error) {
+            logger.error("[SportsComplexRepository][searchClientByMembership]", error);
+            return null;
+        }
+    }
+
+    async createBillWithDiscount(data) {
+        try {
+            // Отримуємо інформацію про послугу
+            const serviceInfo = await sqlRequest(
+                `SELECT id, name, price, lesson_count FROM sport.services WHERE id = $1`,
+                [data.service_id]
+            );
+            
+            if (!serviceInfo || !serviceInfo.length) {
+                throw new Error('Послугу не знайдено');
+            }
+            
+            const service = serviceInfo[0];
+            const originalPrice = service.price;
+            const hasDiscount = !!data.discount_type;
+            const finalPrice = hasDiscount ? Math.round(originalPrice * 0.5) : originalPrice;
+            
+            const sql = `
+                INSERT INTO sport.payments
+                (membership_number, client_name, phone_number, service_id, visit_count, 
+                 original_price, total_price, discount_type, discount_applied)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING id`;
+                
+            const result = await sqlRequest(sql, [
+                data.membership_number,
+                data.client_name,
+                data.phone_number,
+                data.service_id,
+                service.lesson_count,
+                originalPrice,
+                finalPrice,
+                data.discount_type || null,
+                hasDiscount
+            ]);
+            
+            const updateClientSql = `
+                UPDATE sport.clients
+                SET current_service_id = $1,
+                    current_service_name = $2,
+                    remaining_visits = $3,
+                    last_bill_id = $4,
+                    discount_type = $5
+                WHERE membership_number = $6
+            `;
+            
+            await sqlRequest(updateClientSql, [
+                service.id,
+                service.name,
+                service.lesson_count,
+                result[0].id,
+                data.discount_type || null,
+                data.membership_number
+            ]);
+            
+            return result[0];
+        } catch (error) {
+            logger.error("[SportsComplexRepository][createBillWithDiscount]", error);
+            throw error;
+        }
+    }
+
+
+    async updateBillWithDiscount(id, data) {
+        try {
+            // Отримуємо інформацію про послугу
+            const serviceInfo = await sqlRequest(
+                `SELECT id, name, price, lesson_count FROM sport.services WHERE id = $1`,
+                [data.service_id]
+            );
+            
+            if (!serviceInfo || !serviceInfo.length) {
+                throw new Error('Послугу не знайдено');
+            }
+            
+            const service = serviceInfo[0];
+            const originalPrice = service.price;
+            const hasDiscount = !!data.discount_type;
+            const finalPrice = hasDiscount ? Math.round(originalPrice * 0.5) : originalPrice;
+            
+            const sql = `
+                UPDATE sport.payments
+                SET membership_number = $1, client_name = $2, phone_number = $3, 
+                    service_id = $4, visit_count = $5, original_price = $6,
+                    total_price = $7, discount_type = $8, discount_applied = $9
+                WHERE id = $10
+                RETURNING id
+            `;
+            
+            const result = await sqlRequest(sql, [
+                data.membership_number,
+                data.client_name,
+                data.phone_number,
+                data.service_id,
+                service.lesson_count,
+                originalPrice,
+                finalPrice,
+                data.discount_type || null,
+                hasDiscount,
+                id
+            ]);
+            
+            // Оновлюємо клієнта
+            const updateClientSql = `
+                UPDATE sport.clients
+                SET current_service_id = $1,
+                    current_service_name = $2,
+                    remaining_visits = $3,
+                    discount_type = $4
+                WHERE membership_number = $5
+            `;
+            
+            await sqlRequest(updateClientSql, [
+                service.id,
+                service.name,
+                service.lesson_count,
+                data.discount_type || null,
+                data.membership_number
+            ]);
+            
+            return result[0];
+        } catch (error) {
+            logger.error("[SportsComplexRepository][updateBillWithDiscount]", error);
+            throw error;
+        }
+    }
+
+    async findBillsByFilterWithDiscount(limit, offset, displayFields, allowedFields) {
+        try {
+            let sql = `
+                SELECT json_agg(rw) as data,
+                COALESCE(max(cnt), 0) as count
+                FROM (
+                    SELECT json_build_object(
+                        'id', p.id,
+                        'membership_number', p.membership_number,
+                        'client_name', p.client_name,
+                        'phone_number', p.phone_number,
+                        'service_group', sg.name,
+                        'service_name', s.name,
+                        'visit_count', p.visit_count,
+                        'total_price', p.total_price,
+                        'original_price', p.original_price,
+                        'discount_type', p.discount_type,
+                        'discount_applied', p.discount_applied
+                    ) as rw,
+                    count(*) over() as cnt
+                    FROM sport.payments p
+                    LEFT JOIN sport.services s ON p.service_id = s.id
+                    LEFT JOIN sport.service_groups sg ON s.service_group_id = sg.id
+                    WHERE 1=1`;
+            
+            const values = [];
+            let paramIndex = 1;
+            
+            for (const key in allowedFields) {
+                sql += ` AND p.${key} ILIKE $${paramIndex}`;
+                values.push(`%${allowedFields[key]}%`);
+                paramIndex++;
+            }
+            
+            sql += ` ORDER BY p.id DESC LIMIT $${paramIndex} OFFSET $${paramIndex+1}) q`;
+            values.push(limit, offset);
+            
+            return await sqlRequest(sql, values);
+        } catch (error) {
+            logger.error("[SportsComplexRepository][findBillsByFilterWithDiscount]", error);
+            throw error;
+        }
+    }
+
+    async getBillByIdWithDiscount(id) {
+        try {
+            const sql = `
+                SELECT 
+                    p.id,
+                    p.membership_number,
+                    p.client_name,
+                    p.phone_number,
+                    sg.id AS service_group_id,
+                    sg.name AS service_group,
+                    s.id AS service_id,
+                    s.name AS service_name,
+                    p.visit_count,
+                    p.original_price,
+                    p.total_price,
+                    p.discount_type,
+                    p.discount_applied,
+                    s.price
+                FROM 
+                    sport.payments p
+                JOIN 
+                    sport.services s ON p.service_id = s.id
+                JOIN 
+                    sport.service_groups sg ON s.service_group_id = sg.id
+                WHERE 
+                    p.id = $1
+            `;
+            const result = await sqlRequest(sql, [id]);
+            return result[0];
+        } catch (error) {
+            logger.error("[SportsComplexRepository][getBillByIdWithDiscount]", error);
+            throw error;
+        }
+    }
+
+    async generateUniqueClientNumber() {
+        try {
+            let membershipNumber;
+            let isUnique = false;
+            let attempts = 0;
+            const maxAttempts = 50; // Збільшуємо кількість спроб
+            
+            while (!isUnique && attempts < maxAttempts) {
+                // ✅ ПОКРАЩЕНА ГЕНЕРАЦІЯ: додаємо більше випадковості
+                const now = new Date();
+                const year = now.getFullYear().toString().slice(-2);
+                const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                const day = now.getDate().toString().padStart(2, '0');
+                const hours = now.getHours().toString().padStart(2, '0');
+                const minutes = now.getMinutes().toString().padStart(2, '0');
+                const random = Math.floor(100 + Math.random() * 900); // 3-значне число
+                
+                membershipNumber = `${year}${month}${day}${hours}${minutes}${random}`;
+                
+                // Перевіряємо унікальність
+                const checkSql = `SELECT COUNT(*) as count FROM sport.clients WHERE membership_number = $1`;
+                const result = await sqlRequest(checkSql, [membershipNumber]);
+                
+                isUnique = parseInt(result[0].count) === 0;
+                attempts++;
+                
+                // Додаємо невелику затримку між спробами
+                if (!isUnique) {
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+            }
+            
+            if (!isUnique) {
+                throw new Error('Не вдалося згенерувати унікальний номер абонемента після максимальної кількості спроб');
+            }
+            
+            return membershipNumber;
+        } catch (error) {
+            logger.error("[SportsComplexRepository][generateUniqueClientNumber]", error);
+            throw error;
+        }
+    }
+
+    async checkMembershipUnique(membershipNumber) {
+        try {
+            const checkSql = `SELECT COUNT(*) as count FROM sport.clients WHERE membership_number = $1`;
+            const result = await sqlRequest(checkSql, [membershipNumber]);
+            return parseInt(result[0].count) === 0;
+        } catch (error) {
+            logger.error("[SportsComplexRepository][checkMembershipUnique]", error);
             throw error;
         }
     }

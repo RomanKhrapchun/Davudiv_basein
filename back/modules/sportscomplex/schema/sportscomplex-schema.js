@@ -129,11 +129,11 @@ const filterBillsSchema = {
 // Схема для створення рахунку
 const createBillSchema = {
     body: {
-        client_name: {
+        membership_number: {
             type: 'string',
             min: 1,
         },
-        membership_number: {
+        client_name: {
             type: 'string',
             min: 1,
         },
@@ -144,6 +144,10 @@ const createBillSchema = {
         service_id: {
             type: 'number',
             numeric: true,
+        },
+        discount_type: {
+            type: 'string',
+            optional: true,
         }
     }
 }
@@ -157,11 +161,11 @@ const updateBillSchema = {
         }
     },
     body: {
-        client_name: {
+        membership_number: {
             type: 'string',
             min: 1,
         },
-        membership_number: {
+        client_name: {
             type: 'string',
             min: 1,
         },
@@ -172,6 +176,10 @@ const updateBillSchema = {
         service_id: {
             type: 'number',
             numeric: true,
+        },
+        discount_type: {
+            type: 'string',
+            optional: true,
         }
     }
 }
@@ -261,15 +269,14 @@ const updateServiceSchema = {
     }
 }
 
-// Схема для фільтрації клієнтів - ЦЕ БУЛА ВІДСУТНЯ СХЕМА!
 const filterClientsSchema = {
-    body: {  // Змінено з querystring на body
+    body: {
         page: {
             type: 'number',
             optional: true,
         },
         limit: {
-            type: 'number',
+            type: 'number', 
             optional: true,
         },
         name: {
@@ -287,28 +294,24 @@ const filterClientsSchema = {
     }
 }
 
-// Схема для створення клієнта
 const createClientSchema = {
     body: {
         name: {
             type: 'string',
-            min: 1,
-        },
-        membership_number: {
-            type: 'string',
-            min: 1,
+            minLength: 2,
+            maxLength: 100
         },
         phone_number: {
             type: 'string',
-            min: 1,
+            minLength: 13,
+            maxLength: 17,
+            pattern: '^\\+38\\s?0(50|63|66|67|68|91|92|93|94|95|96|97|98|99)\\s?\\d{3}\\s?\\d{2}\\s?\\d{2}$'
         },
-        subscription_duration: {
-            type: 'string',
-            min: 1,
-        },
-        service_name: {
+        membership_number: {
             type: 'string',
             optional: true,
+            minLength: 5,
+            maxLength: 20
         }
     }
 }
@@ -324,23 +327,23 @@ const updateClientSchema = {
     body: {
         name: {
             type: 'string',
-            min: 1,
-        },
-        membership_number: {
-            type: 'string',
-            min: 1,
+            minLength: 2,
+            maxLength: 100
         },
         phone_number: {
             type: 'string',
-            min: 1,
+            minLength: 13,
+            maxLength: 17,
+            pattern: '^\\+38\\s?0(50|63|66|67|68|91|92|93|94|95|96|97|98|99)\\s?\\d{3}\\s?\\d{2}\\s?\\d{2}$'
+        },
+        membership_number: {
+            type: 'string',
+            minLength: 5,
+            maxLength: 20
         },
         subscription_duration: {
             type: 'string',
-            min: 1,
-        },
-        service_name: {
-            type: 'string',
-            optional: true,
+            optional: true
         }
     }
 }
@@ -351,6 +354,15 @@ const renewSubscriptionSchema = {
         id: {
             type: 'string',
             numeric: true,
+        }
+    }
+}
+
+const searchClientByMembershipSchema = {
+    body: {
+        membership_number: {
+            type: 'string',
+            min: 5,
         }
     }
 }
@@ -372,5 +384,6 @@ module.exports = {
     filterClientsSchema,
     createClientSchema,
     updateClientSchema,
-    renewSubscriptionSchema
+    renewSubscriptionSchema,
+    searchClientByMembershipSchema
 }

@@ -13,7 +13,8 @@ const {
     createClientSchema, 
     createBillSchema,
     searchClientsSchema,
-    renewSubscriptionSchema
+    renewSubscriptionSchema,
+    searchClientByMembershipSchema // ✅ НОВАЯ СХЕМА
 } = require("../schema/sportscomplex-schema");
 
 async function sportsComplexRoutes(fastify, options) {
@@ -46,7 +47,7 @@ async function sportsComplexRoutes(fastify, options) {
         handler: sportsComplexController.createPoolService
     });
 
-    fastify.get("/service/:id", {
+    fastify.get("/services/:id", {
         handler: sportsComplexController.getServiceById
     });
 
@@ -70,6 +71,12 @@ async function sportsComplexRoutes(fastify, options) {
         handler: sportsComplexController.getServicesByGroup
     });
 
+    // ✅ НОВЫЙ ЕНДПОІНТ - пошук клієнта по номеру абонемента
+    fastify.post("/clients/search-by-membership", {
+        schema: searchClientByMembershipSchema,
+        handler: sportsComplexController.searchClientByMembership
+    });
+
     fastify.post("/clients/search", {
         schema: searchClientsSchema,
         handler: sportsComplexController.searchClients
@@ -90,6 +97,10 @@ async function sportsComplexRoutes(fastify, options) {
     fastify.put("/clients/:id/renew-subscription", {
         schema: renewSubscriptionSchema,
         handler: sportsComplexController.renewSubscription
+    });
+
+    fastify.put("/clients/:id/start-lesson", {
+        handler: sportsComplexController.startLesson
     });
 
     fastify.put("/clients/:id", {

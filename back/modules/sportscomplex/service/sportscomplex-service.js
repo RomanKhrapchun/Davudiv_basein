@@ -197,13 +197,14 @@ class SportsComplexService {
 
     async createBill(request) {
         try {
-            const { client_name, membership_number, phone_number, service_id } = request.body;
+            const { membership_number, client_name, phone_number, service_id, discount_type } = request.body;
             
-            const result = await sportsComplexRepository.createBill({
-                client_name,
+            const result = await sportsComplexRepository.createBillWithDiscount({
                 membership_number,
+                client_name,
                 phone_number,
-                service_id
+                service_id,
+                discount_type
             });
             
             await logRepository.createLog({
@@ -211,7 +212,7 @@ class SportsComplexService {
                 uid: request?.user?.id,
                 action: 'INSERT',
                 client_addr: request?.ip,
-                application_name: 'Створення рахунку',
+                application_name: 'Створення рахунку з пільгою',
                 action_stamp_tx: new Date(),
                 action_stamp_stm: new Date(),
                 action_stamp_clk: new Date(),
@@ -234,13 +235,14 @@ class SportsComplexService {
     async updateBill(request) {
         try {
             const { id } = request.params;
-            const { client_name, membership_number, phone_number, service_id } = request.body;
+            const { membership_number, client_name, phone_number, service_id, discount_type } = request.body;
             
-            const result = await sportsComplexRepository.updateBill(id, {
-                client_name,
+            const result = await sportsComplexRepository.updateBillWithDiscount(id, {
                 membership_number,
+                client_name,
                 phone_number,
-                service_id
+                service_id,
+                discount_type
             });
             
             if (!result) {
@@ -252,7 +254,7 @@ class SportsComplexService {
                 uid: request?.user?.id,
                 action: 'UPDATE',
                 client_addr: request?.ip,
-                application_name: 'Оновлення рахунку',
+                application_name: 'Оновлення рахунку з пільгою',
                 action_stamp_tx: new Date(),
                 action_stamp_stm: new Date(),
                 action_stamp_clk: new Date(),
@@ -275,7 +277,7 @@ class SportsComplexService {
             
             const allowedFields = allowedBillsFilterFields.filter(el => whereConditions.hasOwnProperty(el)).reduce((acc, key) => ({ ...acc, [key]: whereConditions[key] }), {});
 
-            const data = await sportsComplexRepository.findBillsByFilter(limit, offset, displayBillsFilterFields, allowedFields);
+            const data = await sportsComplexRepository.findBillsByFilterWithDiscount(limit, offset, displayBillsFilterFields, allowedFields);
             
             if (Object.keys(whereConditions).length > 0) {
                 await logRepository.createLog({
@@ -302,7 +304,7 @@ class SportsComplexService {
 
     async getBillById(id) {
         try {
-            return await sportsComplexRepository.getBillById(id);
+            return await sportsComplexRepository.getBillByIdWithDiscount(id);
         } catch (error) {
             logger.error("[SportsComplexService][getBillById]", error);
             throw error;
@@ -314,7 +316,7 @@ class SportsComplexService {
             const { id } = request.params;
             
             // Отримуємо дані рахунку
-            const bill = await sportsComplexRepository.getBillById(id);
+            const bill = await sportsComplexRepository.getBillByIdWithDiscount(id);
             
             if (!bill) {
                 throw new Error('Рахунок не знайдено');
@@ -483,16 +485,65 @@ class SportsComplexService {
         }
     }
 
+    validateUkrainianPhone(phone) {
+        const cleanPhone = phone.replace(/\s/g, '');
+        const phoneRegex = /^\+380(50|63|66|67|68|91|92|93|94|95|96|97|98|99)\d{7}$/;
+        return phoneRegex.test(cleanPhone);
+    }
+
+    normalizeUkrainianPhone(phone) {
+        let cleanPhone = phone.replace(/\s/g, '');
+        
+        if (cleanPhone.startsWith('380') && !cleanPhone.startsWith('+380')) {
+            cleanPhone = '+' + cleanPhone;
+        }
+        
+        if (cleanPhone.startsWith('+380') && cleanPhone.length === 13) {
+            return cleanPhone.replace(/(\+38)(\d{3})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4 $5');
+        }
+        
+        return phone;
+    }
+
     async createClient(request) {
         try {
-            const { name, membership_number, phone_number, subscription_duration, service_name } = request.body;
+            const { name, phone_number, membership_number } = request.body;
+            
+            // Валідація ПІБ
+            if (!name || name.trim().length < 2) {
+                throw new Error('ПІБ клієнта обов\'язкове і має містити мінімум 2 символи');
+            }
+            
+            // Валідація номера телефону
+            if (!phone_number || !this.validateUkrainianPhone(phone_number)) {
+                throw new Error('Номер телефону має бути у форматі +38 0XX XXX XX XX (український номер)');
+            }
+            
+            // Нормалізуємо номер телефону
+            const normalizedPhone = this.normalizeUkrainianPhone(phone_number);
+            
+            // ✅ ПОКРАЩЕНА ЛОГІКА ГЕНЕРАЦІЇ/ПЕРЕВІРКИ НОМЕРА АБОНЕМЕНТА
+            let finalMembershipNumber = membership_number;
+            
+            if (!finalMembershipNumber || finalMembershipNumber.trim() === '') {
+                // Генеруємо новий унікальний номер
+                finalMembershipNumber = await sportsComplexRepository.generateUniqueClientNumber();
+            } else {
+                // Перевіряємо унікальність введеного номера
+                const membershipToCheck = finalMembershipNumber.trim();
+                const isUnique = await sportsComplexRepository.checkMembershipUnique(membershipToCheck);
+                
+                if (!isUnique) {
+                    throw new Error(`Номер абонемента "${membershipToCheck}" вже існує. Залиште поле порожнім для автоматичної генерації або введіть інший номер.`);
+                }
+                
+                finalMembershipNumber = membershipToCheck;
+            }
             
             const result = await sportsComplexRepository.createClient({
-                name,
-                membership_number,
-                phone_number,
-                subscription_duration,
-                service_name: service_name || 'Загальний доступ'
+                name: name.trim(),
+                phone_number: normalizedPhone,
+                membership_number: finalMembershipNumber
             });
             
             await logRepository.createLog({
@@ -512,7 +563,8 @@ class SportsComplexService {
             return { 
                 success: true, 
                 message: 'Клієнта успішно створено',
-                id: result.id
+                id: result.id,
+                membership_number: finalMembershipNumber
             };
         } catch (error) {
             logger.error("[SportsComplexService][createClient]", error);
@@ -635,6 +687,48 @@ class SportsComplexService {
             return { success: true, message: 'Клієнта успішно видалено' };
         } catch (error) {
             logger.error("[SportsComplexService][deleteClient]", error);
+            throw error;
+        }
+    }
+
+    async startLesson(request) {
+        try {
+            const { id } = request.params;
+            
+            const result = await sportsComplexRepository.startLesson(id);
+            
+            if (!result.success) {
+                throw new Error(result.message);
+            }
+            
+            await logRepository.createLog({
+                row_pk_id: id,
+                uid: request?.user?.id,
+                action: 'UPDATE',
+                client_addr: request?.ip,
+                application_name: 'Початок заняття',
+                action_stamp_tx: new Date(),
+                action_stamp_stm: new Date(),
+                action_stamp_clk: new Date(),
+                schema_name: 'sport',
+                table_name: 'clients',
+                oid: '16507',
+            });
+            
+            return result;
+        } catch (error) {
+            logger.error("[SportsComplexService][startLesson]", error);
+            throw error;
+        }
+    }
+
+    async searchClientByMembership(request) {
+        try {
+            const { membership_number } = request.body;
+            const client = await sportsComplexRepository.searchClientByMembership(membership_number);
+            return { data: client };
+        } catch (error) {
+            logger.error("[SportsComplexService][searchClientByMembership]", error);
             throw error;
         }
     }
