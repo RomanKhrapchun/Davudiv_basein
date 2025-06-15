@@ -17,14 +17,14 @@ import Modal from "../../components/common/Modal/Modal.jsx";
 import { Transition } from "react-transition-group";
 import FormItem from "../../components/common/FormItem/FormItem";
 
-// Іконки
+// ✅ ОНОВЛЕНІ ІКОНКИ
 const editIcon = generateIcon(iconMap.edit);
 const filterIcon = generateIcon(iconMap.filter);
 const searchIcon = generateIcon(iconMap.search, 'input-icon');
 const dropDownIcon = generateIcon(iconMap.arrowDown);
 const addIcon = generateIcon(iconMap.add);
-const eyeIcon = generateIcon(iconMap.eye);
-const playIcon = generateIcon(iconMap.play);
+const renewIcon = generateIcon(iconMap.refresh); // ✅ НОВА ІКОНКА для оновлення абонемента
+const startLessonIcon = generateIcon(iconMap.circlePlay); // ✅ НОВА ІКОНКА для початку заняття
 const dropDownStyle = { width: '100%' };
 const childDropDownStyle = { justifyContent: 'center' };
 
@@ -209,7 +209,6 @@ const Clients = () => {
         });
     };
 
-    // Колонки таблиці
     const columns = useMemo(() => [
         { title: 'ПІБ клієнта', dataIndex: 'name', key: 'name' },
         { title: 'Номер абонемента', dataIndex: 'membership_number', key: 'membership_number' },
@@ -218,7 +217,13 @@ const Clients = () => {
             title: 'Поточна послуга', 
             dataIndex: 'current_service_name', 
             key: 'current_service_name',
-            render: (value) => value || 'Немає активної послуги'
+            render: (value, record) => {
+                const visits = record.remaining_visits || 0;
+                if (visits === 0) {
+                    return <span style={{ color: '#666', fontStyle: 'italic' }}>Немає активної послуги</span>;
+                }
+                return value || 'Немає активної послуги';
+            }
         },
         { 
             title: 'Залишилось відвідувань', 
@@ -234,10 +239,35 @@ const Clients = () => {
             title: 'Статус абонемента',
             key: 'subscription_status',
             render: (_, record) => {
-                if (!record.subscription_active || record.subscription_days_left <= 0) {
-                    return <span style={{ color: 'red' }}>Абонемент не активний, прошу оновіть його</span>;
+                // ✅ Використовуємо subscription_start_date замість created_at
+                const startDate = record.subscription_start_date || record.created_at;
+                
+                if (!startDate) {
+                    return <span style={{ color: 'red' }}>Дата початку не встановлена</span>;
                 }
-                return <span style={{ color: 'green' }}>{record.subscription_days_left} днів залишилось</span>;
+                
+                const subscriptionStart = new Date(startDate);
+                const endDate = new Date(subscriptionStart);
+                endDate.setDate(subscriptionStart.getDate() + 30); // Додаємо 30 днів
+                
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                endDate.setHours(0, 0, 0, 0);
+                
+                const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+                
+                if (!record.subscription_active || daysLeft <= 0) {
+                    return <span style={{ color: 'red' }}>Абонемент закінчився, прошу оновіть його</span>;
+                }
+                
+                let color = 'green';
+                if (daysLeft <= 3) {
+                    color = 'red';
+                } else if (daysLeft <= 7) {
+                    color = 'orange';
+                }
+                
+                return <span style={{ color, fontWeight: 'bold' }}>{daysLeft} днів залишилось</span>;
             }
         },
         {
@@ -252,21 +282,20 @@ const Clients = () => {
                     />
                     <Button 
                         title="Оновити абонемент"
-                        icon={eyeIcon} 
+                        icon={renewIcon} 
                         onClick={() => handleOpenRenewModal(record)}
                     />
                     <Button 
                         title="Почати заняття"
-                        icon={playIcon} 
+                        icon={startLessonIcon} 
                         onClick={() => handleOpenStartLessonModal(record)}
                         className={record.remaining_visits === 0 ? "btn--disabled" : ""}
                     />
                 </div>
             )
         }
-    ], [editIcon, eyeIcon, playIcon]);
+    ], [editIcon, renewIcon, startLessonIcon]);
 
-    // Дані таблиці з використанням локальних даних
     const tableData = useMemo(() => {
         if (!Array.isArray(data?.items)) return [];
         return data.items.map(el => ({
@@ -279,7 +308,9 @@ const Clients = () => {
             remaining_visits: el.remaining_visits,
             subscription_duration: el.subscription_duration,
             subscription_days_left: el.subscription_days_left,
-            subscription_active: el.subscription_active
+            subscription_active: el.subscription_active,
+            created_at: el.created_at,
+            subscription_start_date: el.subscription_start_date
         }));
     }, [data]);
 

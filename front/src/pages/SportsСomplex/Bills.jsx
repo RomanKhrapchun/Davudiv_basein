@@ -330,7 +330,8 @@ const Bills = () => {
             service_name: el.service_name,
             visit_count: el.visit_count,
             total_price: el.total_price,
-            discount_type: el.discount_type
+            discount_type: el.discount_type,
+            created_at: el.created_at // ✅ Для звітності
         }));
     }, [data]);
 
@@ -591,6 +592,87 @@ const Bills = () => {
 
     // Функція для навігації по сторінках
     const onPageChange = useCallback(page => setState(prev => ({...prev, sendData: {...prev.sendData, page}})), []);
+
+    // ✅ НОВА ФУНКЦІЯ для генерації PDF звіту
+    const handleGenerateReport = async () => {
+        try {
+            setState(prev => ({...prev, confirmLoading: true}));
+            
+            // Отримуємо сьогоднішню дату у форматі YYYY-MM-DD
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            
+            // Фільтруємо дані тільки за сьогодні
+            const todayBills = tableData.filter(bill => {
+                if (!bill.created_at) return false;
+                const billDate = new Date(bill.created_at).toISOString().split('T')[0];
+                return billDate === todayStr;
+            });
+            
+            if (todayBills.length === 0) {
+                notification({
+                    type: 'warning',
+                    title: 'Немає даних',
+                    message: 'За сьогоднішній день рахунків не знайдено',
+                    placement: 'top'
+                });
+                return;
+            }
+            
+            // Підготовка даних для PDF
+            const reportData = {
+                title: `Звіт по рахунках за ${today.toLocaleDateString('uk-UA')}`,
+                date: today.toLocaleDateString('uk-UA'),
+                bills: todayBills.map((bill, index) => ({
+                    number: index + 1, // Порядковий номер
+                    membership_number: bill.membership_number,
+                    client_name: bill.client_name,
+                    phone_number: bill.phone_number,
+                    service_group: bill.service_group,
+                    service_name: bill.service_name,
+                    visit_count: bill.visit_count,
+                    total_price: bill.total_price,
+                    discount_type: bill.discount_type ? 
+                        DISCOUNT_OPTIONS.find(d => d.id === bill.discount_type)?.label || '—' : '—'
+                }))
+            };
+            
+            // Відправляємо запит на бекенд для генерації PDF
+            const response = await fetchFunction('/api/sportscomplex/bills/daily-report', {
+                method: 'post',
+                data: reportData,
+                responseType: 'blob'
+            });
+            
+            // Скачуємо файл
+            const blob = response.data;
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `звіт-рахунки-${todayStr}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            
+            notification({
+                type: 'success',
+                title: 'Успіх',
+                message: 'Звіт успішно створено та завантажено',
+                placement: 'top'
+            });
+            
+        } catch (error) {
+            notification({
+                type: 'warning',
+                title: 'Помилка',
+                message: 'Не вдалося створити звіт',
+                placement: 'top'
+            });
+        } finally {
+            setState(prev => ({...prev, confirmLoading: false}));
+        }
+    };
 
     // Функції для модального вікна створення
     const openCreateModal = () => {
@@ -902,6 +984,15 @@ const Bills = () => {
                                 icon={addIcon}
                             >
                                 Створити
+                            </Button>
+                            {/* ✅ НОВА КНОПКА ЗВІТНІСТЬ */}
+                            <Button 
+                                className="btn--secondary"
+                                onClick={handleGenerateReport}
+                                icon={downloadIcon}
+                                loading={state.confirmLoading}
+                            >
+                                Звітність
                             </Button>
                             <Dropdown 
                                 icon={dropDownIcon} 
