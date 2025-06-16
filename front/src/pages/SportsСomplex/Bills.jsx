@@ -593,85 +593,109 @@ const Bills = () => {
     // Функція для навігації по сторінках
     const onPageChange = useCallback(page => setState(prev => ({...prev, sendData: {...prev.sendData, page}})), []);
 
-    // ✅ НОВА ФУНКЦІЯ для генерації PDF звіту
-    const handleGenerateReport = async () => {
+    const handleGenerateReport = async (period = 'today') => {
         try {
             setState(prev => ({...prev, confirmLoading: true}));
             
-            // Отримуємо сьогоднішню дату у форматі YYYY-MM-DD
-            const today = new Date();
-            const todayStr = today.toISOString().split('T')[0];
-            
-            // Фільтруємо дані тільки за сьогодні
-            const todayBills = tableData.filter(bill => {
-                if (!bill.created_at) return false;
-                const billDate = new Date(bill.created_at).toISOString().split('T')[0];
-                return billDate === todayStr;
-            });
-            
-            if (todayBills.length === 0) {
+            if (!tableData || tableData.length === 0) {
                 notification({
                     type: 'warning',
                     title: 'Немає даних',
-                    message: 'За сьогоднішній день рахунків не знайдено',
+                    message: 'У системі відсутні рахунки',
                     placement: 'top'
                 });
                 return;
             }
             
-            // Підготовка даних для PDF
-            const reportData = {
-                title: `Звіт по рахунках за ${today.toLocaleDateString('uk-UA')}`,
-                date: today.toLocaleDateString('uk-UA'),
-                bills: todayBills.map((bill, index) => ({
-                    number: index + 1, // Порядковий номер
-                    membership_number: bill.membership_number,
-                    client_name: bill.client_name,
-                    phone_number: bill.phone_number,
-                    service_group: bill.service_group,
-                    service_name: bill.service_name,
-                    visit_count: bill.visit_count,
-                    total_price: bill.total_price,
-                    discount_type: bill.discount_type ? 
-                        DISCOUNT_OPTIONS.find(d => d.id === bill.discount_type)?.label || '—' : '—'
-                }))
-            };
+            // Перевіряємо чи є created_at
+            const hasCreatedAt = tableData[0]?.created_at !== undefined;
+            console.log('Поле created_at присутнє:', hasCreatedAt);
             
-            // Відправляємо запит на бекенд для генерації PDF
-            const response = await fetchFunction('/api/sportscomplex/bills/daily-report', {
-                method: 'post',
-                data: reportData,
-                responseType: 'blob'
-            });
+            if (!hasCreatedAt) {
+                // Якщо created_at відсутнє, генеруємо звіт для всіх
+                generatePDFReport(tableData, 'всі рахунки (поле дати відсутнє)');
+                return;
+            }
             
-            // Скачуємо файл
-            const blob = response.data;
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `звіт-рахунки-${todayStr}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
+            // Якщо created_at є, фільтруємо за періодом
+            const today = new Date();
+            let filteredBills = [];
+            let periodName = '';
             
-            notification({
-                type: 'success',
-                title: 'Успіх',
-                message: 'Звіт успішно створено та завантажено',
-                placement: 'top'
-            });
+            switch (period) {
+                case 'today':
+                    const todayStr = today.toISOString().split('T')[0];
+                    filteredBills = tableData.filter(bill => {
+                        if (!bill.created_at) return false;
+                        const billDate = new Date(bill.created_at).toISOString().split('T')[0];
+                        return billDate === todayStr;
+                    });
+                    periodName = 'сьогоднішній день';
+                    break;
+                    
+                case 'all':
+                    filteredBills = [...tableData];
+                    periodName = 'всі рахунки';
+                    break;
+            }
+            
+            if (filteredBills.length === 0) {
+                const confirmAll = window.confirm(
+                    `За ${periodName} рахунків немає.\nЗгенерувати звіт по всіх рахунках (${tableData.length})?`
+                );
+                
+                if (confirmAll) {
+                    generatePDFReport(tableData, 'всі рахунки');
+                }
+                return;
+            }
+            
+            generatePDFReport(filteredBills, periodName);
             
         } catch (error) {
+            console.error('Помилка генерації звіту:', error);
             notification({
-                type: 'warning',
+                type: 'error',
                 title: 'Помилка',
-                message: 'Не вдалося створити звіт',
+                message: 'Не вдалося згенерувати звіт',
                 placement: 'top'
             });
         } finally {
             setState(prev => ({...prev, confirmLoading: false}));
         }
+    };
+
+    const generatePDFReport = (bills, period) => {
+        const reportData = {
+            title: `Звіт по рахунках за ${period}`,
+            date: new Date().toLocaleDateString('uk-UA'),
+            period: period,
+            totalBills: bills.length,
+            totalAmount: bills.reduce((sum, bill) => sum + (bill.total_price || 0), 0),
+            bills: bills.map((bill, index) => ({
+                number: index + 1,
+                membership_number: bill.membership_number || 'Не вказано',
+                client_name: bill.client_name || 'Не вказано',
+                phone_number: bill.phone_number || 'Не вказано',
+                service_group: bill.service_group || 'Не вказано',
+                service_name: bill.service_name || 'Не вказано',
+                visit_count: bill.visit_count || 0,
+                total_price: bill.total_price || 0,
+                discount_type: bill.discount_type || 'Без знижки',
+                created_at: bill.created_at ? 
+                    new Date(bill.created_at).toLocaleDateString('uk-UA') : 
+                    'Дата невідома'
+            }))
+        };
+        
+        console.log('Дані для PDF звіту:', reportData);
+        
+        notification({
+            type: 'success',
+            title: 'Успіх',
+            message: `Звіт згенеровано для ${bills.length} рахунків на суму ${reportData.totalAmount} грн`,
+            placement: 'top'
+        });
     };
 
     // Функції для модального вікна створення
