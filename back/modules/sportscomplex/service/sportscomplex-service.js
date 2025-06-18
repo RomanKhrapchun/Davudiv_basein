@@ -732,6 +732,108 @@ class SportsComplexService {
             throw error;
         }
     }
+
+    async getBillsReport(request) {
+        try {
+            const filters = request.body || {};
+            const result = await sportsComplexRepository.findBillsForReport(filters);
+            
+            return {
+                success: true,
+                data: result
+            };
+        } catch (error) {
+            logger.error("[SportsComplexService][getBillsReport]", error);
+            throw error;
+        }
+    }
+
+    async exportBillsToWord(request) {
+        try {
+            const bills = request.body;
+            
+            if (!bills || !Array.isArray(bills) || bills.length === 0) {
+                throw new Error('Немає даних для експорту');
+            }
+            
+            const { Document, Paragraph, Table, TableRow, TableCell, AlignmentType, WidthType, Packer } = require('docx');
+            
+            // Створюємо заголовок таблиці
+            const headerRow = new TableRow({
+                children: [
+                    new TableCell({ children: [new Paragraph({ text: "№", alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: "Номер абонемента", alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: "ПІБ клієнта", alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: "Телефон", alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: "Група послуг", alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: "Послуга", alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: "Кількість відвідувань", alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: "Сума", alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: "Пільга", alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: "Дата створення", alignment: AlignmentType.CENTER })] })
+                ]
+            });
+
+            // Створюємо рядки з даними
+            const dataRows = bills.map((bill, index) => new TableRow({
+                children: [
+                    new TableCell({ children: [new Paragraph({ text: (index + 1).toString(), alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: bill.membership_number || "" })] }),
+                    new TableCell({ children: [new Paragraph({ text: bill.client_name || "" })] }),
+                    new TableCell({ children: [new Paragraph({ text: bill.phone_number || "" })] }),
+                    new TableCell({ children: [new Paragraph({ text: bill.service_group || "" })] }),
+                    new TableCell({ children: [new Paragraph({ text: bill.service_name || "" })] }),
+                    new TableCell({ children: [new Paragraph({ text: (bill.visit_count || 0).toString(), alignment: AlignmentType.CENTER })] }),
+                    new TableCell({ children: [new Paragraph({ text: `${bill.total_price || 0} грн`, alignment: AlignmentType.RIGHT })] }),
+                    new TableCell({ children: [new Paragraph({ text: bill.discount_type || "Без пільги" })] }),
+                    new TableCell({ children: [new Paragraph({ text: new Date(bill.created_at).toLocaleDateString('uk-UA') })] })
+                ]
+            }));
+            
+            const table = new Table({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                rows: [headerRow, ...dataRows]
+            });
+            
+            // Підрахунок загальної суми
+            const totalAmount = bills.reduce((sum, bill) => sum + (bill.total_price || 0), 0);
+            
+            const doc = new Document({
+                sections: [{
+                    children: [
+                        new Paragraph({
+                            text: "Звіт по рахунках",
+                            alignment: AlignmentType.CENTER,
+                            spacing: { after: 300 }
+                        }),
+                        new Paragraph({
+                            text: `Дата формування: ${new Date().toLocaleDateString('uk-UA')}`,
+                            alignment: AlignmentType.RIGHT,
+                            spacing: { after: 200 }
+                        }),
+                        new Paragraph({
+                            text: `Загальна кількість рахунків: ${bills.length}`,
+                            alignment: AlignmentType.LEFT,
+                            spacing: { after: 100 }
+                        }),
+                        new Paragraph({
+                            text: `Загальна сума: ${totalAmount} грн`,
+                            alignment: AlignmentType.LEFT,
+                            spacing: { after: 300 }
+                        }),
+                        table
+                    ]
+                }]
+            });
+            
+            // ВИПРАВЛЕНО: повертаємо Buffer замість Document об'єкта
+            return await Packer.toBuffer(doc);
+            
+        } catch (error) {
+            logger.error("[SportsComplexService][exportBillsToWord]", error);
+            throw error;
+        }
+    }
 }
 
 module.exports = new SportsComplexService();

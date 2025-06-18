@@ -367,6 +367,47 @@ const searchClientByMembershipSchema = {
     }
 }
 
+const getBillsReportSchema = {
+    body: {
+        membership_number: {
+            type: 'string',
+            optional: true,
+        },
+        client_name: {
+            type: 'string',
+            optional: true,
+        },
+        phone_number: {
+            type: 'string',
+            optional: true,
+        }
+    }
+}
+
+// Схема для експорту в Word
+const exportBillsToWordSchema = {
+    body: {
+        type: 'array',
+        items: {
+            type: 'object',
+            properties: {
+                id: { type: 'number' },
+                membership_number: { type: 'string' },
+                client_name: { type: 'string' },
+                phone_number: { type: 'string' },
+                service_group: { type: 'string' },
+                service_name: { type: 'string' },
+                visit_count: { type: 'number' },
+                total_price: { type: 'number' },
+                original_price: { type: 'number', optional: true },
+                discount_type: { type: 'string', optional: true },
+                discount_applied: { type: 'boolean', optional: true },
+                created_at: { type: 'string' }
+            }
+        }
+    }
+}
+
 module.exports = {
     filterRequisitesSchema,
     filterPoolServicesSchema,
@@ -385,5 +426,7 @@ module.exports = {
     createClientSchema,
     updateClientSchema,
     renewSubscriptionSchema,
-    searchClientByMembershipSchema
+    searchClientByMembershipSchema,
+    getBillsReportSchema,
+    exportBillsToWordSchema
 }

@@ -332,6 +332,30 @@ class SportsComplexController {
             return reply.code(500).send({ error: "Не вдалося знайти клієнта." });
         }
     }
+    
+    async getBillsReport(request, reply) {
+        try {
+            const result = await sportsComplexService.getBillsReport(request);
+            reply.send(result);
+        } catch (error) {
+            logger.error("[getBillsReport]", error);
+            reply.code(500).send({ error: "Не вдалося отримати дані для звіту." });
+        }
+    }
+
+    async exportBillsToWord(request, reply) {
+        try {
+            const result = await sportsComplexService.exportBillsToWord(request);
+            
+            reply
+                .header('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                .header('Content-Disposition', 'attachment; filename="bills-report.docx"')
+                .send(result);
+        } catch (error) {
+            logger.error("[exportBillsToWord]", error);
+            reply.code(500).send({ error: "Помилка генерації звіту." });
+        }
+    }
 }
 
 module.exports = new SportsComplexController();

@@ -14,7 +14,9 @@ const {
     createBillSchema,
     searchClientsSchema,
     renewSubscriptionSchema,
-    searchClientByMembershipSchema // ✅ НОВАЯ СХЕМА
+    searchClientByMembershipSchema,
+    getBillsReportSchema,
+    exportBillsToWordSchema
 } = require("../schema/sportscomplex-schema");
 
 async function sportsComplexRoutes(fastify, options) {
@@ -123,13 +125,23 @@ async function sportsComplexRoutes(fastify, options) {
         handler: sportsComplexController.createBill
     });
 
+    fastify.post("/bills/report", {
+        schema: getBillsReportSchema,
+        handler: sportsComplexController.getBillsReport
+    });
+
+    fastify.post("/bills/export-word", {
+        schema: exportBillsToWordSchema,
+        handler: sportsComplexController.exportBillsToWord
+    });
+
     fastify.get("/bills/:id", sportsComplexController.getBillById);
 
     fastify.put("/bills/:id", {
         schema: updateBillSchema,
         handler: sportsComplexController.updateBill
     });
-
+    
     fastify.get("/bills/:id/download", sportsComplexController.downloadBill);
 }
 

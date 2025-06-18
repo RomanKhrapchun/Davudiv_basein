@@ -953,6 +953,57 @@ async findBillsByFilter(limit, offset, displayFields, allowedFields) {
             throw error;
         }
     }
+
+    async findBillsForReport(filters = {}) {
+        try {
+            let sql = `
+                SELECT 
+                    p.id,
+                    p.membership_number,
+                    p.client_name,
+                    p.phone_number,
+                    p.visit_count,
+                    p.total_price,
+                    p.original_price,
+                    p.discount_type,
+                    p.discount_applied,
+                    p.created_at,
+                    s.name as service_name,
+                    sg.name as service_group
+                FROM sport.payments p
+                LEFT JOIN sport.services s ON p.service_id = s.id
+                LEFT JOIN sport.service_groups sg ON s.service_group_id = sg.id
+                WHERE 1=1`;
+            
+            const values = [];
+            let paramIndex = 1;
+            
+            if (filters.membership_number) {
+                sql += ` AND p.membership_number ILIKE $${paramIndex}`;
+                values.push(`%${filters.membership_number}%`);
+                paramIndex++;
+            }
+            
+            if (filters.client_name) {
+                sql += ` AND p.client_name ILIKE $${paramIndex}`;
+                values.push(`%${filters.client_name}%`);
+                paramIndex++;
+            }
+            
+            if (filters.phone_number) {
+                sql += ` AND p.phone_number ILIKE $${paramIndex}`;
+                values.push(`%${filters.phone_number}%`);
+                paramIndex++;
+            }
+            
+            sql += ` ORDER BY p.created_at DESC`;
+            
+            return await sqlRequest(sql, values);
+        } catch (error) {
+            logger.error("[SportsComplexRepository][findBillsForReport]", error);
+            throw error;
+        }
+    }
 }
 
 module.exports = new SportsComplexRepository();
